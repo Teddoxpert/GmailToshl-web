@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gmail to Toshl Scraper</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .status-dot { height: 10px; width: 10px; border-radius: 50%; display: inline-block; }
+        .status-connected { background-color: #22c55e; }
+        .status-disconnected { background-color: #ef4444; }
+        .fade-in { animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .modal-backdrop {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 1000; opacity: 0; pointer-events: none;
+            transition: opacity 0.3s ease-in-out;
+        }
+        .modal-backdrop.visible { opacity: 1; pointer-events: auto; }
+        .modal-content {
+            background: white; padding: 2rem; border-radius: 0.75rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            max-width: 90%; width: 500px;
+            transform: scale(0.95); transition: transform 0.3s ease-in-out;
+        }
+        .modal-backdrop.visible .modal-content { transform: scale(1); }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-4xl">
+        <header class="bg-white p-6 rounded-xl shadow-md mb-8">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-900">Gmail to Toshl</h1>
+                    <p class="text-gray-500 mt-1">Automate your expense tracking.</p>
+                </div>
+                <div class="flex space-x-4 items-center">
+                    <div class="text-right">
+                        <span class="font-medium">Google</span>
+                        <span id="google-status-dot" class="status-dot status-disconnected ml-2"></span>
+                    </div>
+                     <div class="text-right">
+                        <span class="font-medium">Toshl</span>
+                        <span id="toshl-status-dot" class="status-dot status-disconnected ml-2"></span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div class="lg:col-span-1 space-y-8">
+                <div class="bg-white p-6 rounded-xl shadow-md">
+                    <h2 class="text-xl font-bold mb-4">Connections</h2>
+                    <div class="space-y-4">
+                        <button id="connect-google-btn" disabled class="w-full bg-gray-400 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center cursor-not-allowed">
+                            <i class="fas fa-spinner fa-spin mr-2"></i>
+                            <span>Loading APIs...</span>
+                        </button>
+                        
+                        <hr class="border-gray-200">
+
+                        <div class="space-y-2">
+                            <label class="text-xs font-bold text-gray-500 uppercase">Google Client ID</label>
+                            <div id="gcid-connect-wrapper" class="flex flex-col space-y-2">
+                                <input type="password" id="gcid-input" placeholder="Google OAuth Client ID" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                <button id="save-gcid-btn" class="w-full bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 transition text-sm">Save</button>
+                            </div>
+                            <button id="disconnect-gcid-btn" class="hidden w-full bg-gray-400 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-500 transition text-sm">Clear Client ID</button>
+                        </div>
+
+                        <div class="space-y-2">
+                            <label class="text-xs font-bold text-gray-500 uppercase">Google Cloud Project ID</label>
+                            <div id="gcp-connect-wrapper" class="flex flex-col space-y-2">
+                                <input type="text" id="gcp-input" placeholder="e.g. my-project-123456" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                <button id="save-gcp-btn" class="w-full bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 transition text-sm">Save</button>
+                            </div>
+                            <button id="disconnect-gcp-btn" class="hidden w-full bg-gray-400 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-500 transition text-sm">Clear Project ID</button>
+                        </div>
+
+                        <div class="space-y-2">
+                            <label class="text-xs font-bold text-gray-500 uppercase">CORS Proxy URL</label>
+                            <div id="proxy-connect-wrapper" class="flex flex-col space-y-2">
+                                <input type="text" id="proxy-input" placeholder="e.g. https://myproxy.workers.dev/?url=" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                <button id="save-proxy-btn" class="w-full bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 transition text-sm">Save</button>
+                            </div>
+                            <button id="disconnect-proxy-btn" class="hidden w-full bg-gray-400 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-500 transition text-sm">Clear Proxy</button>
+                            <p class="text-xs text-gray-400">Required for Toshl API calls. URL should end with a parameter for the target URL.</p>
+                        </div>
+
+                        <hr class="border-gray-200">
+
+                        <div class="space-y-2">
+                            <label class="text-xs font-bold text-gray-500 uppercase">Toshl API Token</label>
+                            <div id="toshl-connect-wrapper" class="flex flex-col space-y-2">
+                                <input type="password" id="toshl-token-input" placeholder="Paste Toshl Token" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-green-500 outline-none">
+                                <button id="save-toshl-btn" class="w-full bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600 transition text-sm">Save Token</button>
+                            </div>
+                            <button id="disconnect-toshl-btn" class="hidden w-full bg-gray-400 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-500 transition text-sm">Disconnect Toshl</button>
+                        </div>
+
+                        <hr class="border-gray-200">
+
+                        <div class="space-y-2">
+                            <label class="text-xs font-bold text-gray-500 uppercase">Gemini API Key (Optional)</label>
+                            <div id="gemini-connect-wrapper" class="flex flex-col space-y-2">
+                                <input type="password" id="gemini-key-input" placeholder="Paste Gemini Key (AIza...)" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                <button id="save-gemini-btn" class="w-full bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 transition text-sm">Save Key</button>
+                            </div>
+                            <button id="disconnect-gemini-btn" class="hidden w-full bg-gray-400 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-500 transition text-sm">Remove Key</button>
+                            <p class="text-xs text-gray-400">If empty, uses Vertex AI (requires Google Cloud setup).</p>
+                        </div>
+                    </div>
+                     <div class="mt-4 text-sm text-gray-500">
+                        <p id="google-status-text">Status: Not Connected</p>
+                        <p id="toshl-status-text">Status: Not Connected</p>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-xl shadow-md">
+                    <h2 class="text-xl font-bold mb-4">Manual Scan</h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label for="start-date" class="block text-sm font-medium text-gray-700">Start Date</label>
+                            <input type="date" id="start-date" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2">
+                        </div>
+                        <div>
+                            <label for="end-date" class="block text-sm font-medium text-gray-700">End Date</label>
+                            <input type="date" id="end-date" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2">
+                        </div>
+                        <button id="scan-gmail-btn" class="w-full bg-gray-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-gray-800 transition duration-300 flex items-center justify-center" disabled>
+                            <i class="fas fa-search mr-2"></i>
+                            <span id="scan-btn-text">Scan Gmail for Receipts</span>
+                        </button>
+                    </div>
+                    <p id="scan-helper-text" class="text-xs text-gray-400 mt-3 text-center">Connect services to enable.</p>
+                </div>
+
+                <div class="bg-white p-6 rounded-xl shadow-md">
+                    <h2 class="text-xl font-bold mb-4">Activity Log</h2>
+                    <div id="activity-log" class="space-y-3 max-h-60 overflow-y-auto pr-2">
+                        <p class="text-gray-400 text-sm">No activity yet.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md">
+                <h2 class="text-2xl font-bold mb-5">Pending Receipts for Review</h2>
+                <div id="review-queue" class="space-y-4">
+                    <p id="review-placeholder" class="text-gray-500">No new receipts found. Connect to Google and run a scan!</p>
+                </div>
+            </div>
+        </main>
+
+        <div class="mt-8 bg-white p-6 rounded-xl shadow-md">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Gemini Live Log</h2>
+                <div class="flex items-center space-x-2">
+                    <button id="gemini-log-prev" class="px-3 py-1 bg-gray-200 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"><i class="fas fa-chevron-left"></i></button>
+                    <span class="text-sm">Log <input type="number" id="gemini-log-input" class="w-12 text-center bg-gray-100 rounded"> of <span id="gemini-log-total">0</span></span>
+                    <button id="gemini-log-next" class="px-3 py-1 bg-gray-200 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"><i class="fas fa-chevron-right"></i></button>
+                </div>
+            </div>
+            <div id="gemini-log-content" class="bg-gray-900 text-white font-mono text-xs p-4 rounded-lg h-80 overflow-y-auto">
+                <p class="text-gray-400">Scan results will appear here...</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="custom-modal" class="modal-backdrop">
+        <div class="modal-content text-center">
+            <h3 id="modal-title" class="text-2xl font-bold mb-4">Notification</h3>
+            <p id="modal-message" class="text-gray-600 mb-6" style="white-space: pre-wrap; word-wrap: break-word;"></p>
+            <button id="modal-close-btn" class="bg-blue-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-blue-700 transition duration-300">Close</button>
+        </div>
+    </div>
+
+    <script>
+        // --- CONFIGURATION (all user-provided, stored in localStorage) ---
+        let GOOGLE_CLIENT_ID = '';
+        let GOOGLE_CLOUD_PROJECT_ID = '';
+        let CORS_PROXY_URL = '';
+        const GMAIL_DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/gmail/v1/rest';
+        const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/cloud-platform';
+
+        // --- STATE & INITIALIZATION ---
+        let TOSH_API_TOKEN = '';
+        let GEMINI_API_KEY = '';
+
+        try {
+            GOOGLE_CLIENT_ID = localStorage.getItem('google_client_id') || '';
+            GOOGLE_CLOUD_PROJECT_ID = localStorage.getItem('google_cloud_project_id') || '';
+            CORS_PROXY_URL = localStorage.getItem('cors_proxy_url') || '';
+            TOSH_API_TOKEN = localStorage.getItem('toshl_api_token') || '';
+            GEMINI_API_KEY = localStorage.getItem('gemini_api_key') || '';
+        } catch(e) { console.warn("LocalStorage access denied"); }
+
+        let tokenClient;
+        let gapiInited = false;
+        let gisInited = false;
+        
+        let pendingReceipts = [];
+        let processedMessageIds = new Set();
+        let geminiLogs = [];
+        let currentLogIndex = -1;
+
+        // --- DOM ELEMENTS ---
+        const googleStatusDot = document.getElementById('google-status-dot');
+        const toshlStatusDot = document.getElementById('toshl-status-dot');
+        const googleStatusText = document.getElementById('google-status-text');
+        const toshlStatusText = document.getElementById('toshl-status-text');
+        
+        const connectGoogleBtn = document.getElementById('connect-google-btn');
+
+        const gcidConnectWrapper = document.getElementById('gcid-connect-wrapper');
+        const gcidInput = document.getElementById('gcid-input');
+        const saveGcidBtn = document.getElementById('save-gcid-btn');
+        const disconnectGcidBtn = document.getElementById('disconnect-gcid-btn');
+
+        const gcpConnectWrapper = document.getElementById('gcp-connect-wrapper');
+        const gcpInput = document.getElementById('gcp-input');
+        const saveGcpBtn = document.getElementById('save-gcp-btn');
+        const disconnectGcpBtn = document.getElementById('disconnect-gcp-btn');
+
+        const proxyConnectWrapper = document.getElementById('proxy-connect-wrapper');
+        const proxyInput = document.getElementById('proxy-input');
+        const saveProxyBtn = document.getElementById('save-proxy-btn');
+        const disconnectProxyBtn = document.getElementById('disconnect-proxy-btn');
+
+        const toshlConnectWrapper = document.getElementById('toshl-connect-wrapper');
+        const toshlTokenInput = document.getElementById('toshl-token-input');
+        const saveToshlBtn = document.getElementById('save-toshl-btn');
+        const disconnectToshlBtn = document.getElementById('disconnect-toshl-btn');
+
+        const geminiConnectWrapper = document.getElementById('gemini-connect-wrapper');
+        const geminiKeyInput = document.getElementById('gemini-key-input');
+        const saveGeminiBtn = document.getElementById('save-gemini-btn');
+        const disconnectGeminiBtn = document.getElementById('disconnect-gemini-btn');
+
+        const scanGmailBtn = document.getElementById('scan-gmail-btn');
+        const scanBtnText = document.getElementById('scan-btn-text');
+        const scanHelperText = document.getElementById('scan-helper-text');
+        const startDateInput = document.getElementById('start-date');
+        const endDateInput = document.getElementById('end-date');
+        const reviewQueueContainer = document.getElementById('review-queue');
+        const reviewPlaceholder = document.getElementById('review-placeholder');
+        const activityLogContainer = document.getElementById('activity-log');
+        const geminiLogContent = document.getElementById('gemini-log-content');
+        const geminiLogPrevBtn = document.getElementById('gemini-log-prev');
+        const geminiLogNextBtn = document.getElementById('gemini-log-next');
+        const geminiLogInput = document.getElementById('gemini-log-input');
+        const geminiLogTotal = document.getElementById('gemini-log-total');
+        const modal = document.getElementById('custom-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalMessage = document.getElementById('modal-message');
+        const modalCloseBtn = document.getElementById('modal-close-btn');
+
+        let isGoogleConnected = false;
+
+        // --- UI UTILITIES ---
+        function showModal(title, message) {
+            modalTitle.textContent = title;
+            modalMessage.textContent = message;
+            modal.classList.add('visible');
+        }
+
+        modalCloseBtn.addEventListener('click', () => modal.classList.remove('visible'));
+
+        function logActivity(message, type = 'success', id = null, logIndex = -1) {
+            if (id) {
+                const existingEntry = document.getElementById(id);
+                if (existingEntry) {
+                    existingEntry.querySelector('span').innerHTML = message;
+                    const icon = existingEntry.querySelector('i');
+                    icon.className = `fas ${type === 'success' ? 'fa-check-circle text-green-500' : 'fa-times-circle text-red-500'} mr-2 mt-1`;
+                    return;
+                }
+            }
+            if (activityLogContainer.querySelector('p')) activityLogContainer.innerHTML = '';
+            
+            const logEntry = document.createElement('div');
+            const iconClass = type === 'success' ? 'fa-check-circle text-green-500' : 'fa-times-circle text-red-500';
+            logEntry.className = 'fade-in text-sm flex items-start';
+            if (id) logEntry.id = id;
+            
+            let messageHTML = message;
+            if (logIndex > -1) messageHTML = `<a href="#" onclick="jumpToLog(${logIndex}); return false;" class="hover:underline">${message}</a>`;
+
+            logEntry.innerHTML = `<i class="${iconClass} mr-2 mt-1"></i><span>${messageHTML}</span>`;
+            activityLogContainer.prepend(logEntry);
+        }
+
+        function updateUIState() {
+            // Google State
+            if (isGoogleConnected) {
+                googleStatusDot.className = 'status-dot status-connected ml-2';
+                googleStatusText.textContent = 'Status: Connected';
+                connectGoogleBtn.disabled = false;
+                connectGoogleBtn.innerHTML = '<i class="fab fa-google mr-2"></i><span>Disconnect from Google</span>';
+                connectGoogleBtn.className = 'w-full bg-gray-400 text-white font-bold py-3 px-4 rounded-lg hover:bg-gray-500 transition duration-300 flex items-center justify-center cursor-pointer';
+            } else {
+                googleStatusDot.className = 'status-dot status-disconnected ml-2';
+                googleStatusText.textContent = 'Status: Not Connected';
+                if (gapiInited && gisInited && GOOGLE_CLIENT_ID) {
+                    connectGoogleBtn.disabled = false;
+                    connectGoogleBtn.innerHTML = '<i class="fab fa-google mr-2"></i><span>Connect with Google</span>';
+                    connectGoogleBtn.className = 'w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition duration-300 flex items-center justify-center cursor-pointer';
+                } else if (!GOOGLE_CLIENT_ID) {
+                    connectGoogleBtn.disabled = true;
+                    connectGoogleBtn.innerHTML = '<i class="fab fa-google mr-2"></i><span>Set Client ID first</span>';
+                    connectGoogleBtn.className = 'w-full bg-gray-400 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center cursor-not-allowed';
+                } else {
+                    connectGoogleBtn.disabled = true;
+                    connectGoogleBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i><span>Loading APIs...</span>';
+                    connectGoogleBtn.className = 'w-full bg-gray-400 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center cursor-not-allowed';
+                }
+            }
+
+            // Toshl State
+            if (TOSH_API_TOKEN && TOSH_API_TOKEN.length > 5) {
+                toshlStatusDot.className = 'status-dot status-connected ml-2';
+                toshlStatusText.textContent = 'Status: Connected';
+                toshlConnectWrapper.classList.add('hidden');
+                disconnectToshlBtn.classList.remove('hidden');
+            } else {
+                toshlStatusDot.className = 'status-dot status-disconnected ml-2';
+                toshlStatusText.textContent = 'Status: Not Connected';
+                toshlConnectWrapper.classList.remove('hidden');
+                disconnectToshlBtn.classList.add('hidden');
+            }
+
+            // Google Config State
+            if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_ID.length > 5) {
+                gcidConnectWrapper.classList.add('hidden');
+                disconnectGcidBtn.classList.remove('hidden');
+            } else {
+                gcidConnectWrapper.classList.remove('hidden');
+                disconnectGcidBtn.classList.add('hidden');
+            }
+            if (GOOGLE_CLOUD_PROJECT_ID && GOOGLE_CLOUD_PROJECT_ID.length > 3) {
+                gcpConnectWrapper.classList.add('hidden');
+                disconnectGcpBtn.classList.remove('hidden');
+            } else {
+                gcpConnectWrapper.classList.remove('hidden');
+                disconnectGcpBtn.classList.add('hidden');
+            }
+
+            // CORS Proxy State
+            if (CORS_PROXY_URL && CORS_PROXY_URL.length > 5) {
+                proxyConnectWrapper.classList.add('hidden');
+                disconnectProxyBtn.classList.remove('hidden');
+            } else {
+                proxyConnectWrapper.classList.remove('hidden');
+                disconnectProxyBtn.classList.add('hidden');
+            }
+
+            // Gemini State
+            if (GEMINI_API_KEY && GEMINI_API_KEY.length > 10) {
+                geminiConnectWrapper.classList.add('hidden');
+                disconnectGeminiBtn.classList.remove('hidden');
+            } else {
+                geminiConnectWrapper.classList.remove('hidden');
+                disconnectGeminiBtn.classList.add('hidden');
+            }
+
+            // Scan Button
+            if (isGoogleConnected && TOSH_API_TOKEN && TOSH_API_TOKEN.length > 5 && CORS_PROXY_URL) {
+                scanGmailBtn.disabled = false;
+                scanHelperText.style.display = 'none';
+                scanGmailBtn.className = 'w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 transition duration-300 flex items-center justify-center cursor-pointer';
+            } else {
+                scanGmailBtn.disabled = true;
+                scanHelperText.style.display = 'block';
+                scanGmailBtn.className = 'w-full bg-gray-400 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center cursor-not-allowed';
+            }
+        }
+
+        // --- AUTH & SETUP ---
+        function gapiLoaded() {
+            gapi.load('client', async () => {
+                try {
+                    await gapi.client.init({ discoveryDocs: [GMAIL_DISCOVERY_DOC] });
+                    gapiInited = true;
+                    updateUIState();
+                } catch (e) { console.error("GAPI Init Error", e); }
+            });
+        }
+
+        function gisLoaded() {
+            gisInited = true;
+            initTokenClient();
+            updateUIState();
+        }
+
+        function initTokenClient() {
+            if (!gisInited || !GOOGLE_CLIENT_ID) return;
+            try {
+                tokenClient = google.accounts.oauth2.initTokenClient({
+                    client_id: GOOGLE_CLIENT_ID,
+                    scope: GOOGLE_SCOPES,
+                    callback: (resp) => {
+                        if (resp.error) return console.error(resp);
+                        isGoogleConnected = true;
+                        updateUIState();
+                        logActivity('Connected to Google.', 'success');
+                    },
+                });
+                updateUIState();
+            } catch (e) { console.error("GIS Init Error", e); }
+        }
+
+        connectGoogleBtn.addEventListener('click', () => {
+            if (isGoogleConnected) {
+                const token = gapi.client.getToken();
+                if (token) {
+                    google.accounts.oauth2.revoke(token.access_token, () => {
+                        gapi.client.setToken('');
+                        isGoogleConnected = false;
+                        updateUIState();
+                        logActivity('Disconnected from Google.', 'success');
+                    });
+                }
+            } else {
+                if (tokenClient) tokenClient.requestAccessToken({prompt: 'consent'});
+            }
+        });
+
+        saveGcidBtn.addEventListener('click', () => {
+            const val = gcidInput.value.trim();
+            if (val) {
+                GOOGLE_CLIENT_ID = val;
+                try { localStorage.setItem('google_client_id', val); } catch(e){}
+                initTokenClient();
+                updateUIState();
+                logActivity('Google Client ID saved.', 'success');
+            }
+        });
+
+        disconnectGcidBtn.addEventListener('click', () => {
+            GOOGLE_CLIENT_ID = '';
+            try { localStorage.removeItem('google_client_id'); } catch(e){}
+            gcidInput.value = '';
+            tokenClient = null;
+            updateUIState();
+            logActivity('Google Client ID removed.', 'success');
+        });
+
+        saveGcpBtn.addEventListener('click', () => {
+            const val = gcpInput.value.trim();
+            if (val) {
+                GOOGLE_CLOUD_PROJECT_ID = val;
+                try { localStorage.setItem('google_cloud_project_id', val); } catch(e){}
+                updateUIState();
+                logActivity('Google Cloud Project ID saved.', 'success');
+            }
+        });
+
+        disconnectGcpBtn.addEventListener('click', () => {
+            GOOGLE_CLOUD_PROJECT_ID = '';
+            try { localStorage.removeItem('google_cloud_project_id'); } catch(e){}
+            gcpInput.value = '';
+            updateUIState();
+            logActivity('Google Cloud Project ID removed.', 'success');
+        });
+
+        saveProxyBtn.addEventListener('click', () => {
+            const val = proxyInput.value.trim();
+            if (val) {
+                CORS_PROXY_URL = val;
+                try { localStorage.setItem('cors_proxy_url', val); } catch(e){}
+                updateUIState();
+                logActivity('CORS Proxy URL saved.', 'success');
+            }
+        });
+
+        disconnectProxyBtn.addEventListener('click', () => {
+            CORS_PROXY_URL = '';
+            try { localStorage.removeItem('cors_proxy_url'); } catch(e){}
+            proxyInput.value = '';
+            updateUIState();
+            logActivity('CORS Proxy URL removed.', 'success');
+        });
+
+        saveToshlBtn.addEventListener('click', () => {
+            const val = toshlTokenInput.value.trim();
+            if (val) {
+                TOSH_API_TOKEN = val;
+                try { localStorage.setItem('toshl_api_token', val); } catch(e){}
+                updateUIState();
+                logActivity('Toshl API Token saved.', 'success');
+            }
+        });
+
+        disconnectToshlBtn.addEventListener('click', () => {
+            TOSH_API_TOKEN = '';
+            try { localStorage.removeItem('toshl_api_token'); } catch(e){}
+            toshlTokenInput.value = '';
+            updateUIState();
+            logActivity('Disconnected from Toshl.', 'success');
+        });
+
+        saveGeminiBtn.addEventListener('click', () => {
+            const val = geminiKeyInput.value.trim();
+            if (val) {
+                GEMINI_API_KEY = val;
+                try { localStorage.setItem('gemini_api_key', val); } catch(e){}
+                updateUIState();
+                logActivity('Gemini API Key saved.', 'success');
+            }
+        });
+
+        disconnectGeminiBtn.addEventListener('click', () => {
+            GEMINI_API_KEY = '';
+            try { localStorage.removeItem('gemini_api_key'); } catch(e){}
+            geminiKeyInput.value = '';
+            updateUIState();
+            logActivity('Removed Gemini Key. Reverting to Vertex AI.', 'success');
+        });
+
+        scanGmailBtn.addEventListener('click', scanGmail);
+
+        // --- CORE LOGIC ---
+        
+        async function getExistingToshlEntries(from, to) {
+            let allEntries = [];
+            let page = 0;
+            let hasMore = true;
+            const perPage = 500; 
+            const f = (d) => d.split('T')[0];
+
+            try {
+                logActivity('Background: Checking Toshl for duplicates...', 'default');
+                while (hasMore) {
+                    const url = `https://api.toshl.com/entries?from=${f(from)}&to=${f(to)}&type=expense&page=${page}&per_page=${perPage}`;
+                    // PROXY SWITCH: Used your Cloudflare worker
+                    const proxyUrl = CORS_PROXY_URL + encodeURIComponent(url);
+                    const response = await fetch(proxyUrl, { headers: { 'Authorization': `Bearer ${TOSH_API_TOKEN}` } });
+                    if (!response.ok) throw new Error('Failed to fetch Toshl entries');
+                    const data = await response.json();
+                    allEntries = allEntries.concat(data);
+                    if (data.length < perPage) hasMore = false; else page++;
+                }
+                return allEntries;
+            } catch (error) {
+                console.error("Toshl Fetch Error:", error);
+                return [];
+            }
+        }
+
+        async function detectDuplicatesBatch(newReceipts, existingEntries) {
+            if (!newReceipts.length || !existingEntries.length) return [];
+            const f = (d) => d ? d.split('T')[0] : 'N/A';
+            
+            const newReceiptsList = newReceipts.map(r => 
+                `ID: ${r.id} | Date: ${f(r.date)} | Amt: ${r.amount} ${r.currency} | Vendor: ${r.vendor}`
+            ).join('\n');
+
+            const existingEntriesList = existingEntries.map((e, index) => {
+                const cleanDesc = (e.desc || '').replace(/[\r\n]+/g, ' ').substring(0, 50);
+                return `Entry #${index + 1} | Date: ${f(e.date)} | Amt: ${Math.abs(e.amount).toFixed(2)} ${e.currency.code} | Desc: ${cleanDesc}`;
+            }).join('\n');
+
+            const prompt = `
+            You are an expert accountant detecting duplicate expenses.
+            I have two lists:
+            1. NEW RECEIPTS (from email)
+            2. EXISTING ENTRIES (already in database)
+            Your Task: Identify which items in "NEW RECEIPTS" are likely duplicates of items in "EXISTING ENTRIES".
+            Matching Rules:
+            - Strong Match: Same Date (or within 2 days), Same Amount, Similar Name.
+            - Fuzzy Match: Dates are close, Amount is same, Name is slightly different.
+            - Currency: 10 SGD and 10 USD are NOT duplicates.
+            - Caution: Recurring subscriptions on different months are NOT duplicates.
+
+            --- NEW RECEIPTS ---
+            ${newReceiptsList}
+
+            --- EXISTING ENTRIES ---
+            ${existingEntriesList}
+
+            OUTPUT FORMAT:
+            Return ONLY a JSON array containing the IDs of the NEW RECEIPTS that are duplicates.
+            Example: ["msg_123", "msg_456"]
+            If no duplicates found, return [].`;
+
+            try {
+                // SWITCH: Use Gemini API Key if available, else Vertex AI
+                let apiUrl, headers;
+                const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
+
+                if (GEMINI_API_KEY) {
+                    apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+                    headers = { 'Content-Type': 'application/json' };
+                } else {
+                    const location = 'us-central1';
+                    const model = 'gemini-2.5-flash';
+                    apiUrl = `https://us-central1-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_ID}/locations/${location}/publishers/google/models/${model}:generateContent`;
+                    headers = { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${gapi.client.getToken().access_token}`
+                    };
+                }
+                
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) throw new Error('Gemini API Error');
+                const result = await response.json();
+                addGeminiLog("DUPLICATE CHECK", prompt, `RESPONSE`, JSON.stringify(result, null, 2));
+
+                if (result.candidates && result.candidates[0]?.content?.parts[0]?.text) {
+                    const text = result.candidates[0].content.parts[0].text;
+                    const firstBracket = text.indexOf('[');
+                    const lastBracket = text.lastIndexOf(']');
+                    if (firstBracket !== -1 && lastBracket !== -1) {
+                        return JSON.parse(text.substring(firstBracket, lastBracket + 1));
+                    }
+                }
+                return [];
+            } catch (error) {
+                console.error("Batch Duplicate Check Failed:", error);
+                addGeminiLog("DUPLICATE CHECK ERROR", prompt, "ERROR", error.message, true);
+                return [];
+            }
+        }
+
+        async function scanGmail() {
+            scanGmailBtn.disabled = true;
+            scanBtnText.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>Scanning...`;
+            geminiLogs = []; currentLogIndex = -1; renderGeminiLog();
+            logActivity('Searching recent emails...', 'success', 'scan-status');
+
+            try {
+                const startDate = startDateInput.value;
+                const endDate = endDateInput.value;
+                let dateQuery = `after:${startDate} before:${endDate}`;
+
+                let allMessages = [];
+                let nextPageToken = undefined;
+                do {
+                    const response = await gapi.client.gmail.users.messages.list({
+                        'userId': 'me', 'q': `in:inbox ${dateQuery}`, 'maxResults': 100, 'pageToken': nextPageToken
+                    });
+                    if (response.result.messages) allMessages.push(...response.result.messages);
+                    nextPageToken = response.result.nextPageToken;
+                } while (nextPageToken);
+
+                logActivity(`Found ${allMessages.length} emails. Analysis started...`, 'success', 'scan-status');
+                
+                pendingReceipts = [];
+                let scannedCount = 0;
+
+                // Process in batches of 5 to avoid Gmail API rate limits (429)
+                for (let i = 0; i < allMessages.length; i += 5) {
+                    const batch = allMessages.slice(i, i + 5);
+                    const batchPromises = batch.map(async (msg, idx) => {
+                        if (processedMessageIds.has(msg.id)) return;
+                        try {
+                            const res = await gapi.client.gmail.users.messages.get({ 'userId': 'me', 'id': msg.id, 'format': 'full' });
+                            const content = getEmailBody(res.result);
+                            const pdfParts = findPdfAttachments(res.result.payload.parts || []);
+                            const pdfDataArray = [];
+                            for (const pdf of pdfParts) {
+                                try {
+                                    const data = await downloadAttachment(msg.id, pdf.attachmentId);
+                                    pdfDataArray.push({ data, filename: pdf.filename });
+                                } catch (e) { console.error('PDF download failed:', e); }
+                            }
+                            if (content || pdfDataArray.length > 0) {
+                                const data = await extractExpenseData(content, res.result.snippet, pdfDataArray);
+                                if (data && data.is_expense) {
+                                    const norm = normalizeReceiptData(data);
+                                    if (!norm.date && res.result.internalDate) {
+                                        norm.date = new Date(parseInt(res.result.internalDate)).toISOString().split('T')[0];
+                                    }
+                                    if (norm.vendor && norm.amount) {
+                                        // Update State & Render Immediately
+                                        pendingReceipts.unshift({ ...norm, id: msg.id, emailNumber: i + idx + 1, totalEmails: allMessages.length, logIndex: geminiLogs.length - 1 });
+                                        processedMessageIds.add(msg.id);
+                                        renderReviewQueue(); // STREAMING RESTORED
+                                    }
+                                }
+                            }
+                        } catch(e) { console.error(e); }
+                        scannedCount++;
+                        logActivity(`Analyzed ${scannedCount}/${allMessages.length}. Found ${pendingReceipts.length} expenses.`, 'success', 'scan-status');
+                    });
+                    await Promise.all(batchPromises);
+                    if (i + 5 < allMessages.length) await new Promise(r => setTimeout(r, 500));
+                }
+
+                logActivity('Scan complete. Checking for duplicates...', 'success');
+
+                // Duplicate Check (Run after scan, update UI when done)
+                if (pendingReceipts.length > 0) {
+                    const existing = await getExistingToshlEntries(startDate, endDate);
+                    const duplicateIds = await detectDuplicatesBatch(pendingReceipts, existing);
+                    
+                    // Update flags
+                    pendingReceipts = pendingReceipts.map(r => ({ ...r, isDuplicate: duplicateIds.includes(r.id) }));
+                    
+                    // Final Render with Duplicate Warnings
+                    renderReviewQueue();
+                    logActivity(`Duplicate check done. Found ${duplicateIds.length} matches.`, 'success');
+                } 
+
+            } catch (err) {
+                console.error(err);
+                showModal('Error', err.message);
+                logActivity(err.message, 'error');
+            } finally {
+                updateUIState();
+                scanBtnText.innerHTML = `<i class="fas fa-search mr-2"></i>Scan Gmail for Receipts`;
+            }
+        }
+
+        function getEmailBody(message) {
+            let encodedBody = '';
+            if (message.payload.body.data) {
+                encodedBody = message.payload.body.data;
+            } else if (message.payload.parts) {
+                encodedBody = getHTMLPart(message.payload.parts);
+            }
+            return encodedBody ? atob(encodedBody.replace(/-/g, '+').replace(/_/g, '/')) : '';
+        }
+
+        function getHTMLPart(parts) {
+            for (const part of parts) {
+                if (part.mimeType === 'text/html') return part.body.data;
+                if (part.parts) {
+                    const res = getHTMLPart(part.parts);
+                    if (res) return res;
+                }
+            }
+            return '';
+        }
+
+        function findPdfAttachments(parts) {
+            const pdfs = [];
+            if (!parts) return pdfs;
+            for (const part of parts) {
+                if (part.mimeType === 'application/pdf' && part.body && part.body.attachmentId) {
+                    pdfs.push({ attachmentId: part.body.attachmentId, filename: part.filename });
+                }
+                if (part.parts) pdfs.push(...findPdfAttachments(part.parts));
+            }
+            return pdfs;
+        }
+
+        async function downloadAttachment(messageId, attachmentId) {
+            const res = await gapi.client.gmail.users.messages.attachments.get({
+                userId: 'me', messageId: messageId, id: attachmentId
+            });
+            // Convert base64url to standard base64
+            return res.result.data.replace(/-/g, '+').replace(/_/g, '/');
+        }
+
+        function normalizeReceiptData(data) {
+            return {
+                is_expense: data.is_expense,
+                vendor: data.vendor,
+                amount: data.amount || data.total_amount,
+                currency: data.currency,
+                date: data.date,
+                description: data.description,
+                category: data.category
+            };
+        }
+
+        async function extractExpenseData(emailContent, snippet, pdfDataArray = []) {
+            const categories = "Telco, Utilities, Transport, Unclassified, Insurance, Pets, Groceries, Wedding, Renovation, Hardware, Household, Holidays, Eating out, Services, Clothes, Taxes, Gifts, Education, Leisure, Health & Personal Care";
+            const hasPdfs = pdfDataArray.length > 0;
+            const cleanedEmail = emailContent ? emailContent.replace(/<style[^>]*>.*<\/style>/gs, "").replace(/<[^>]+>/g, ' ').substring(0, 3000) : '';
+            const prompt = `Analyze this email${hasPdfs ? ' and its PDF attachment(s)' : ''}. Is it an expense? If NO, return {"is_expense": false}. If YES, extract: vendor, amount, currency (e.g. USD), date (YYYY-MM-DD), description, category (choose from: ${categories}). Return minified JSON.${cleanedEmail ? ` Email: --- ${cleanedEmail} ---` : ''}${hasPdfs ? ' PDF attachment(s) are provided below.' : ''}`;
+
+            try {
+                // SWITCH: Use Gemini API Key if available, else Vertex AI
+                let apiUrl, headers;
+                const parts = [{ text: prompt }];
+                for (const pdf of pdfDataArray) {
+                    parts.push({ inline_data: { mime_type: "application/pdf", data: pdf.data } });
+                }
+                const payload = { contents: [{ role: "user", parts }] };
+
+                if (GEMINI_API_KEY) {
+                    apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+                    headers = { 'Content-Type': 'application/json' };
+                } else {
+                    const location = 'us-central1';
+                    const model = 'gemini-2.5-flash';
+                    apiUrl = `https://us-central1-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_ID}/locations/${location}/publishers/google/models/${model}:generateContent`;
+                    headers = { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${gapi.client.getToken().access_token}`
+                    };
+                }
+                
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify(payload)
+                });
+                
+                const result = await response.json();
+                addGeminiLog("RECEIPT PARSE", prompt, "RESPONSE", JSON.stringify(result, null, 2));
+
+                if (result.candidates && result.candidates[0]?.content?.parts[0]?.text) {
+                    let text = result.candidates[0].content.parts[0].text.trim();
+                    text = text.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+                    // Try to find JSON object in the response
+                    const jsonStart = text.indexOf('{');
+                    const jsonEnd = text.lastIndexOf('}');
+                    if (jsonStart !== -1 && jsonEnd !== -1) {
+                        return JSON.parse(text.substring(jsonStart, jsonEnd + 1));
+                    }
+                }
+                return null;
+            } catch (error) {
+                console.error('extractExpenseData:', error);
+                return null;
+            }
+        }
+        
+        async function postToToshl(receipt) {
+            try {
+                // Find/Create Category
+                // PROXY SWITCH
+                const catUrl = CORS_PROXY_URL + encodeURIComponent('https://api.toshl.com/categories');
+                let catRes = await fetch(catUrl, { headers: {'Authorization': `Bearer ${TOSH_API_TOKEN}`} });
+                let cats = await catRes.json();
+                let catId = cats.find(c => c.name.toLowerCase() === (receipt.category || 'Unclassified').toLowerCase())?.id;
+                
+                if (!catId) {
+                    // PROXY SWITCH
+                    const createCatUrl = CORS_PROXY_URL + encodeURIComponent('https://api.toshl.com/categories');
+                    catRes = await fetch(createCatUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOSH_API_TOKEN}` },
+                        body: JSON.stringify({ name: receipt.category || 'Unclassified', type: 'expense' })
+                    });
+                    if (catRes.status === 201) catId = catRes.headers.get('Location').split('/').pop();
+                }
+
+                // Find/Create Tag
+                // PROXY SWITCH
+                const tagUrl = CORS_PROXY_URL + encodeURIComponent('https://api.toshl.com/tags');
+                let tagRes = await fetch(tagUrl, { headers: {'Authorization': `Bearer ${TOSH_API_TOKEN}`} });
+                let tags = await tagRes.json();
+                let tagId = tags.find(t => t.name.toLowerCase() === 'script_added')?.id;
+
+                if (!tagId) {
+                    // PROXY SWITCH
+                    const createTagUrl = CORS_PROXY_URL + encodeURIComponent('https://api.toshl.com/tags');
+                    tagRes = await fetch(createTagUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOSH_API_TOKEN}` },
+                        body: JSON.stringify({ name: 'Script_Added', type: 'expense' })
+                    });
+                    if (tagRes.status === 201) tagId = tagRes.headers.get('Location').split('/').pop();
+                }
+
+                // Post Entry
+                // PROXY SWITCH
+                const entryUrl = CORS_PROXY_URL + encodeURIComponent('https://api.toshl.com/entries');
+                const entryData = {
+                    amount: -Math.abs(parseFloat(receipt.amount)),
+                    currency: { code: receipt.currency },
+                    date: receipt.date,
+                    desc: `${receipt.vendor}: ${receipt.description}`,
+                    category: catId,
+                    tags: tagId ? [tagId] : []
+                };
+
+                const postRes = await fetch(entryUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOSH_API_TOKEN}` },
+                    body: JSON.stringify(entryData)
+                });
+
+                if (postRes.status === 201) return true;
+                const err = await postRes.json();
+                showModal('Error', JSON.stringify(err));
+                return false;
+
+            } catch (e) {
+                console.error(e);
+                showModal('Network Error', 'Check console for details.');
+                return false;
+            }
+        }
+
+        // --- RENDERERS ---
+        function renderReviewQueue() {
+            reviewQueueContainer.innerHTML = '';
+            if (pendingReceipts.length === 0) {
+                reviewQueueContainer.appendChild(reviewPlaceholder);
+                reviewPlaceholder.style.display = 'block';
+                return;
+            }
+            reviewPlaceholder.style.display = 'none';
+            pendingReceipts.sort((a, b) => b.emailNumber - a.emailNumber).forEach(receipt => {
+                const card = document.createElement('div');
+                const bgClass = receipt.isDuplicate ? 'bg-yellow-50 border-yellow-200' : 'bg-gray-50 border-gray-200';
+                card.className = `fade-in ${bgClass} p-4 rounded-lg border flex flex-col sm:flex-row sm:items-center sm:justify-between`;
+                card.id = `receipt-${receipt.id}`;
+                
+                const duplicateBadge = receipt.isDuplicate 
+                    ? `<span class="inline-block bg-yellow-200 text-yellow-800 text-xs px-2 py-1 rounded-full font-bold mb-2"><i class="fas fa-exclamation-triangle mr-1"></i> Potential Duplicate</span>` 
+                    : '';
+
+                card.innerHTML = `
+                    <div class="flex-grow mb-4 sm:mb-0">
+                        ${duplicateBadge}
+                        <div class="flex items-center justify-between">
+                            <p class="font-bold text-lg">${receipt.vendor || 'Unknown'}</p>
+                            <a href="#" onclick="jumpToLog(${receipt.logIndex}); return false;" class="text-xs text-blue-500 hover:underline ml-2">Email ${receipt.emailNumber}/${receipt.totalEmails}</a>
+                        </div>
+                        <p class="text-gray-600">${receipt.description || 'No desc'}</p>
+                        <div class="flex items-center mt-1">
+                            <p class="text-sm text-gray-400">${receipt.date}</p>
+                            <span class="mx-2 text-gray-300">&bull;</span>
+                            <p class="text-sm font-medium text-indigo-600">${receipt.category || 'Unclassified'}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <p class="text-xl font-bold text-right w-32">${parseFloat(receipt.amount).toFixed(2)} ${receipt.currency}</p>
+                        <button onclick="handleApprove('${receipt.id}')" id="btn-${receipt.id}" title="Approve" class="${receipt.isDuplicate ? 'bg-yellow-400 hover:bg-yellow-500' : 'bg-green-500 hover:bg-green-600'} text-white px-3 py-2 rounded-lg transition"><i class="fas fa-check"></i></button>
+                        <button onclick="handleApproveAndDelete('${receipt.id}')" id="btn-ad-${receipt.id}" title="Approve &amp; Delete Email" class="${receipt.isDuplicate ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-green-700 hover:bg-green-800'} text-white px-3 py-2 rounded-lg transition"><i class="fas fa-check"></i><i class="fas fa-trash ml-1 text-xs"></i></button>
+                        <button onclick="handleReject('${receipt.id}')" title="Reject" class="bg-red-500 text-white px-3 py-2 rounded-lg hover:bg-red-600 transition"><i class="fas fa-times"></i></button>
+                        <button onclick="handleRejectAndDelete('${receipt.id}')" id="btn-rd-${receipt.id}" title="Reject &amp; Delete Email" class="bg-red-700 text-white px-3 py-2 rounded-lg hover:bg-red-800 transition"><i class="fas fa-times"></i><i class="fas fa-trash ml-1 text-xs"></i></button>
+                    </div>`;
+                reviewQueueContainer.appendChild(card);
+            });
+        }
+
+        async function handleApprove(id) {
+            const btn = document.getElementById(`btn-${id}`);
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            const r = pendingReceipts.find(x => x.id === id);
+            if (await postToToshl(r)) {
+                logActivity(`Added ${r.vendor}`, 'success');
+                pendingReceipts = pendingReceipts.filter(x => x.id !== id);
+                renderReviewQueue();
+            } else {
+                btn.innerHTML = '<i class="fas fa-check"></i>';
+            }
+        }
+        
+        function handleReject(id) {
+            pendingReceipts = pendingReceipts.filter(x => x.id !== id);
+            renderReviewQueue();
+        }
+
+        async function trashEmail(messageId) {
+            await gapi.client.gmail.users.messages.trash({userId: 'me', id: messageId});
+        }
+
+        async function handleApproveAndDelete(id) {
+            const btn = document.getElementById(`btn-ad-${id}`);
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            const r = pendingReceipts.find(x => x.id === id);
+            if (await postToToshl(r)) {
+                try {
+                    await trashEmail(id);
+                    logActivity(`Added ${r.vendor} (email deleted)`, 'success');
+                } catch (e) {
+                    console.error('Failed to trash email:', e);
+                    logActivity(`Added ${r.vendor} (email delete failed)`, 'error');
+                }
+                pendingReceipts = pendingReceipts.filter(x => x.id !== id);
+                renderReviewQueue();
+            } else {
+                btn.innerHTML = '<i class="fas fa-check"></i><i class="fas fa-trash ml-1 text-xs"></i>';
+            }
+        }
+
+        async function handleRejectAndDelete(id) {
+            const btn = document.getElementById(`btn-rd-${id}`);
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            try {
+                await trashEmail(id);
+                logActivity(`Rejected (email deleted)`, 'success');
+            } catch (e) {
+                console.error('Failed to trash email:', e);
+                logActivity(`Rejected (email delete failed)`, 'error');
+            }
+            pendingReceipts = pendingReceipts.filter(x => x.id !== id);
+            renderReviewQueue();
+        }
+
+        function renderGeminiLog() {
+            geminiLogTotal.textContent = geminiLogs.length;
+            if (currentLogIndex < 0 || !geminiLogs.length) {
+                geminiLogContent.innerHTML = '<p class="text-gray-400">No logs.</p>';
+                geminiLogInput.value = '';
+                return;
+            }
+            const log = geminiLogs[currentLogIndex];
+            geminiLogContent.innerHTML = `
+                <h4 class="font-bold text-green-400">${log.title}</h4>
+                <pre class="bg-gray-800 p-2 rounded mt-1 whitespace-pre-wrap break-all mb-4">${log.prompt}</pre>
+                <h4 class="font-bold ${log.isError?'text-red-400':'text-blue-400'}">${log.respTitle}</h4>
+                <pre class="bg-gray-800 p-2 rounded mt-1 whitespace-pre-wrap break-all">${log.response}</pre>`;
+            geminiLogInput.value = currentLogIndex + 1;
+        }
+
+        function addGeminiLog(title, prompt, respTitle, response, isError = false) {
+            geminiLogs.push({ title, prompt, respTitle, response, isError });
+            currentLogIndex = geminiLogs.length - 1;
+            renderGeminiLog();
+        }
+
+        function jumpToLog(idx) { currentLogIndex = idx; renderGeminiLog(); }
+        geminiLogPrevBtn.onclick = () => { if(currentLogIndex > 0) { currentLogIndex--; renderGeminiLog(); }};
+        geminiLogNextBtn.onclick = () => { if(currentLogIndex < geminiLogs.length-1) { currentLogIndex++; renderGeminiLog(); }};
+        geminiLogInput.onchange = (e) => { const v = parseInt(e.target.value)-1; if(v >= 0 && v < geminiLogs.length) { currentLogIndex = v; renderGeminiLog(); }};
+
+        // Initialize Dates
+        const today = new Date();
+        const past = new Date(); past.setDate(today.getDate() - 90);
+        endDateInput.value = today.toISOString().split('T')[0];
+        startDateInput.value = past.toISOString().split('T')[0];
+        
+        // Initial UI Update
+        updateUIState();
+        window.handleApprove = handleApprove;
+        window.handleReject = handleReject;
+        window.handleApproveAndDelete = handleApproveAndDelete;
+        window.handleRejectAndDelete = handleRejectAndDelete;
+
+    </script>
+    <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
+    <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
+</body>
+</html>
