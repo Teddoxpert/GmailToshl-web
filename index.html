@@ -596,12 +596,13 @@
             1. NEW RECEIPTS (from email)
             2. EXISTING ENTRIES (already in database)
             Your Task: Identify which items in "NEW RECEIPTS" are likely duplicates of items in "EXISTING ENTRIES".
-            Matching Rules (apply ALL of these independently):
+            Matching Rules (apply ALL of these independently - if ANY rule matches, flag as duplicate):
             - Name Match: Same Date (or within 2 days), Same Amount, Similar Name.
             - Fuzzy Name Match: Dates are close, Amount is same, Name is slightly different.
-            - Amount+Date Match: If a NEW RECEIPT has the SAME amount AND the SAME date (or within 1 day) as an EXISTING ENTRY, flag it as a duplicate EVEN IF the names/vendors are completely different. For example, "MODERN CITY 12.00 SGD 2022-04-01" matches "Benjamin, Cash 12.00 SGD 2022-04-01" because amount and date match.
+            - Amount+Date Match: Same Amount AND Same Date (or within 1 day), flag as duplicate EVEN IF names are completely different. Example: "MODERN CITY 12.00 SGD 2026-04-01" matches "Benjamin, Cash 12.00 SGD 2026-04-01".
+            - Specific Amount Match: If the amount has cents (not a round number like 10.00, 5.00, 100.00), and the EXACT same amount and currency appear in both lists, flag as duplicate even if dates differ by up to 14 days. Amounts like 12.32, 46.94, 94.79 are specific enough that an exact match is very likely the same transaction. Round amounts like 12.00, 50.00, 100.00 need closer date matching.
             - Currency matters: 10 SGD and 10 USD are NOT duplicates (different currencies).
-            - Recurring exception: Same subscription on different months are NOT duplicates.
+            - Recurring exception: Same subscription on different months are NOT duplicates (e.g. monthly Singtel bills).
 
             --- NEW RECEIPTS ---
             ${newReceiptsList}
@@ -751,7 +752,14 @@
 
                 // Duplicate Check (Run after scan, update UI when done)
                 if (pendingReceipts.length > 0) {
-                    const existing = await getExistingToshlEntries(startDate, endDate);
+                    // Expand date range to cover all receipt dates (+ 7 day buffer)
+                    const allDates = pendingReceipts.map(r => r.date).filter(Boolean).sort();
+                    const fetchFrom = allDates[0] < startDate ? allDates[0] : startDate;
+                    const fetchTo = allDates[allDates.length - 1] > endDate ? allDates[allDates.length - 1] : endDate;
+                    const bufferFrom = new Date(new Date(fetchFrom).getTime() - 7 * 86400000).toISOString().split('T')[0];
+                    const bufferTo = new Date(new Date(fetchTo).getTime() + 7 * 86400000).toISOString().split('T')[0];
+                    logActivity(`Toshl fetch range expanded: ${bufferFrom} to ${bufferTo}`, 'success');
+                    const existing = await getExistingToshlEntries(bufferFrom, bufferTo);
                     const duplicateIds = await detectDuplicatesBatch(pendingReceipts, existing);
                     
                     // Update flags
