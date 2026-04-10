@@ -584,18 +584,24 @@
                 return `Entry #${index + 1} | Date: ${f(e.date)} | Amt: ${Math.abs(e.amount).toFixed(2)} ${e.currency.code} | Desc: ${cleanDesc}`;
             }).join('\n');
 
+            logActivity(`New receipts list:\n${newReceiptsList}`, 'success');
+            logActivity(`Existing entries (${existingEntries.length} total, showing first 10):\n${existingEntries.slice(0, 10).map((e, i) => {
+                const cleanDesc = (e.desc || '').replace(/[\r\n]+/g, ' ').substring(0, 50);
+                return `#${i+1} | ${f(e.date)} | ${Math.abs(e.amount).toFixed(2)} ${e.currency.code} | ${cleanDesc}`;
+            }).join('\n')}`, 'success');
+
             const prompt = `
             You are an expert accountant detecting duplicate expenses.
             I have two lists:
             1. NEW RECEIPTS (from email)
             2. EXISTING ENTRIES (already in database)
             Your Task: Identify which items in "NEW RECEIPTS" are likely duplicates of items in "EXISTING ENTRIES".
-            Matching Rules:
-            - Strong Match: Same Date (or within 2 days), Same Amount, Similar Name.
-            - Fuzzy Match: Dates are close, Amount is same, Name is slightly different.
-            - Amount+Date Match: Same Amount AND Same Date (or within 1 day), even if names are completely different. Flag these as duplicates.
-            - Currency: 10 SGD and 10 USD are NOT duplicates.
-            - Caution: Recurring subscriptions on different months are NOT duplicates.
+            Matching Rules (apply ALL of these independently):
+            - Name Match: Same Date (or within 2 days), Same Amount, Similar Name.
+            - Fuzzy Name Match: Dates are close, Amount is same, Name is slightly different.
+            - Amount+Date Match: If a NEW RECEIPT has the SAME amount AND the SAME date (or within 1 day) as an EXISTING ENTRY, flag it as a duplicate EVEN IF the names/vendors are completely different. For example, "MODERN CITY 12.00 SGD 2022-04-01" matches "Benjamin, Cash 12.00 SGD 2022-04-01" because amount and date match.
+            - Currency matters: 10 SGD and 10 USD are NOT duplicates (different currencies).
+            - Recurring exception: Same subscription on different months are NOT duplicates.
 
             --- NEW RECEIPTS ---
             ${newReceiptsList}
@@ -639,7 +645,9 @@
                     return [];
                 }
                 const result = await response.json();
-                addGeminiLog("DUPLICATE CHECK", prompt, `RESPONSE`, JSON.stringify(result, null, 2));
+                const dupLogIndex = geminiLogs.length;
+                addGeminiLog("DUPLICATE CHECK PROMPT", prompt, `RESPONSE`, JSON.stringify(result, null, 2));
+                logActivity(`Duplicate check sent to Gemini.`, 'success', null, dupLogIndex);
 
                 if (result.candidates && result.candidates[0]?.content?.parts[0]?.text) {
                     const text = result.candidates[0].content.parts[0].text;
