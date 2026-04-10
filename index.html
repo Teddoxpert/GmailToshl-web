@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gmail to Toshl Scraper</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config = { darkMode: 'class' }</script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -31,19 +32,25 @@
             max-width: 90%; width: 500px;
             transform: scale(0.95); transition: transform 0.3s ease-in-out;
         }
+        .dark .modal-content { background: #1f2937; color: #e5e7eb; }
         .modal-backdrop.visible .modal-content { transform: scale(1); }
+        .dark input[type="date"] { color-scheme: dark; }
+        .dark input[type="number"] { color-scheme: dark; }
     </style>
 </head>
-<body class="bg-gray-100 text-gray-800">
+<body class="bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200 transition-colors">
 
     <div class="container mx-auto p-4 md:p-8 max-w-4xl">
-        <header class="bg-white p-6 rounded-xl shadow-md mb-8">
+        <header class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md mb-8">
             <div class="flex justify-between items-center">
                 <div>
-                    <h1 class="text-3xl font-bold text-gray-900">Gmail to Toshl</h1>
-                    <p class="text-gray-500 mt-1">Automate your expense tracking.</p>
+                    <h1 class="text-3xl font-bold text-gray-900 dark:text-white">Gmail to Toshl</h1>
+                    <p class="text-gray-500 dark:text-gray-400 mt-1">Automate your expense tracking.</p>
                 </div>
                 <div class="flex space-x-4 items-center">
+                    <button id="dark-mode-toggle" class="p-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 transition" title="Toggle dark mode">
+                        <i id="dark-mode-icon" class="fas fa-moon text-gray-600 dark:text-yellow-300"></i>
+                    </button>
                     <div class="text-right">
                         <span class="font-medium">Google</span>
                         <span id="google-status-dot" class="status-dot status-disconnected ml-2"></span>
@@ -58,7 +65,7 @@
 
         <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div class="lg:col-span-1 space-y-8">
-                <div class="bg-white p-6 rounded-xl shadow-md">
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md">
                     <h2 class="text-xl font-bold mb-4">Connections</h2>
                     <div class="space-y-4">
                         <button id="connect-google-btn" disabled class="w-full bg-gray-400 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center cursor-not-allowed">
@@ -66,107 +73,107 @@
                             <span>Loading APIs...</span>
                         </button>
                         
-                        <hr class="border-gray-200">
+                        <hr class="border-gray-200 dark:border-gray-700">
 
                         <div class="space-y-2">
-                            <label class="text-xs font-bold text-gray-500 uppercase">Google Client ID</label>
+                            <label class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Google Client ID</label>
                             <div id="gcid-connect-wrapper" class="flex flex-col space-y-2">
-                                <input type="password" id="gcid-input" placeholder="Google OAuth Client ID" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                <input type="password" id="gcid-input" placeholder="Google OAuth Client ID" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
                                 <button id="save-gcid-btn" class="w-full bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 transition text-sm">Save</button>
                             </div>
                             <button id="disconnect-gcid-btn" class="hidden w-full bg-gray-400 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-500 transition text-sm">Clear Client ID</button>
                         </div>
 
                         <div class="space-y-2">
-                            <label class="text-xs font-bold text-gray-500 uppercase">Google Cloud Project ID</label>
+                            <label class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Google Cloud Project ID</label>
                             <div id="gcp-connect-wrapper" class="flex flex-col space-y-2">
-                                <input type="text" id="gcp-input" placeholder="e.g. my-project-123456" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                <input type="text" id="gcp-input" placeholder="e.g. my-project-123456" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
                                 <button id="save-gcp-btn" class="w-full bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 transition text-sm">Save</button>
                             </div>
                             <button id="disconnect-gcp-btn" class="hidden w-full bg-gray-400 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-500 transition text-sm">Clear Project ID</button>
                         </div>
 
                         <div class="space-y-2">
-                            <label class="text-xs font-bold text-gray-500 uppercase">CORS Proxy URL</label>
+                            <label class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">CORS Proxy URL</label>
                             <div id="proxy-connect-wrapper" class="flex flex-col space-y-2">
-                                <input type="text" id="proxy-input" placeholder="e.g. https://myproxy.workers.dev/?url=" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                <input type="text" id="proxy-input" placeholder="e.g. https://myproxy.workers.dev/?url=" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
                                 <button id="save-proxy-btn" class="w-full bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 transition text-sm">Save</button>
                             </div>
                             <button id="disconnect-proxy-btn" class="hidden w-full bg-gray-400 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-500 transition text-sm">Clear Proxy</button>
-                            <p class="text-xs text-gray-400">Required for Toshl API calls. URL should end with a parameter for the target URL.</p>
+                            <p class="text-xs text-gray-400 dark:text-gray-500">Required for Toshl API calls. URL should end with a parameter for the target URL.</p>
                         </div>
 
-                        <hr class="border-gray-200">
+                        <hr class="border-gray-200 dark:border-gray-700">
 
                         <div class="space-y-2">
-                            <label class="text-xs font-bold text-gray-500 uppercase">Toshl API Token</label>
+                            <label class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Toshl API Token</label>
                             <div id="toshl-connect-wrapper" class="flex flex-col space-y-2">
-                                <input type="password" id="toshl-token-input" placeholder="Paste Toshl Token" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-green-500 outline-none">
+                                <input type="password" id="toshl-token-input" placeholder="Paste Toshl Token" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-green-500 outline-none">
                                 <button id="save-toshl-btn" class="w-full bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600 transition text-sm">Save Token</button>
                             </div>
                             <button id="disconnect-toshl-btn" class="hidden w-full bg-gray-400 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-500 transition text-sm">Disconnect Toshl</button>
                         </div>
 
-                        <hr class="border-gray-200">
+                        <hr class="border-gray-200 dark:border-gray-700">
 
                         <div class="space-y-2">
-                            <label class="text-xs font-bold text-gray-500 uppercase">Gemini API Key (Optional)</label>
+                            <label class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Gemini API Key (Optional)</label>
                             <div id="gemini-connect-wrapper" class="flex flex-col space-y-2">
-                                <input type="password" id="gemini-key-input" placeholder="Paste Gemini Key (AIza...)" class="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                                <input type="password" id="gemini-key-input" placeholder="Paste Gemini Key (AIza...)" class="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
                                 <button id="save-gemini-btn" class="w-full bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 transition text-sm">Save Key</button>
                             </div>
                             <button id="disconnect-gemini-btn" class="hidden w-full bg-gray-400 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-500 transition text-sm">Remove Key</button>
-                            <p class="text-xs text-gray-400">If empty, uses Vertex AI (requires Google Cloud setup).</p>
+                            <p class="text-xs text-gray-400 dark:text-gray-500">If empty, uses Vertex AI (requires Google Cloud setup).</p>
                         </div>
                     </div>
-                     <div class="mt-4 text-sm text-gray-500">
+                     <div class="mt-4 text-sm text-gray-500 dark:text-gray-400">
                         <p id="google-status-text">Status: Not Connected</p>
                         <p id="toshl-status-text">Status: Not Connected</p>
                     </div>
                 </div>
 
-                <div class="bg-white p-6 rounded-xl shadow-md">
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md">
                     <h2 class="text-xl font-bold mb-4">Manual Scan</h2>
                     <div class="space-y-4">
                         <div>
-                            <label for="start-date" class="block text-sm font-medium text-gray-700">Start Date</label>
-                            <input type="date" id="start-date" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2">
+                            <label for="start-date" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Start Date</label>
+                            <input type="date" id="start-date" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2">
                         </div>
                         <div>
-                            <label for="end-date" class="block text-sm font-medium text-gray-700">End Date</label>
-                            <input type="date" id="end-date" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2">
+                            <label for="end-date" class="block text-sm font-medium text-gray-700 dark:text-gray-300">End Date</label>
+                            <input type="date" id="end-date" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2">
                         </div>
                         <button id="scan-gmail-btn" class="w-full bg-gray-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-gray-800 transition duration-300 flex items-center justify-center" disabled>
                             <i class="fas fa-search mr-2"></i>
                             <span id="scan-btn-text">Scan Gmail for Receipts</span>
                         </button>
                     </div>
-                    <p id="scan-helper-text" class="text-xs text-gray-400 mt-3 text-center">Connect services to enable.</p>
+                    <p id="scan-helper-text" class="text-xs text-gray-400 dark:text-gray-500 mt-3 text-center">Connect services to enable.</p>
                 </div>
 
-                <div class="bg-white p-6 rounded-xl shadow-md">
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md">
                     <h2 class="text-xl font-bold mb-4">Activity Log</h2>
                     <div id="activity-log" class="space-y-3 max-h-60 overflow-y-auto pr-2">
-                        <p class="text-gray-400 text-sm">No activity yet.</p>
+                        <p class="text-gray-400 dark:text-gray-500 text-sm">No activity yet.</p>
                     </div>
                 </div>
             </div>
 
-            <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md">
+            <div class="lg:col-span-2 bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md">
                 <h2 class="text-2xl font-bold mb-5">Pending Receipts for Review</h2>
                 <div id="review-queue" class="space-y-4">
-                    <p id="review-placeholder" class="text-gray-500">No new receipts found. Connect to Google and run a scan!</p>
+                    <p id="review-placeholder" class="text-gray-500 dark:text-gray-400">No new receipts found. Connect to Google and run a scan!</p>
                 </div>
             </div>
         </main>
 
-        <div class="mt-8 bg-white p-6 rounded-xl shadow-md">
+        <div class="mt-8 bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-xl font-bold">Gemini Live Log</h2>
                 <div class="flex items-center space-x-2">
-                    <button id="gemini-log-prev" class="px-3 py-1 bg-gray-200 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"><i class="fas fa-chevron-left"></i></button>
-                    <span class="text-sm">Log <input type="number" id="gemini-log-input" class="w-12 text-center bg-gray-100 rounded"> of <span id="gemini-log-total">0</span></span>
-                    <button id="gemini-log-next" class="px-3 py-1 bg-gray-200 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"><i class="fas fa-chevron-right"></i></button>
+                    <button id="gemini-log-prev" class="px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"><i class="fas fa-chevron-left"></i></button>
+                    <span class="text-sm">Log <input type="number" id="gemini-log-input" class="w-12 text-center bg-gray-100 dark:bg-gray-700 dark:text-gray-200 rounded"> of <span id="gemini-log-total">0</span></span>
+                    <button id="gemini-log-next" class="px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"><i class="fas fa-chevron-right"></i></button>
                 </div>
             </div>
             <div id="gemini-log-content" class="bg-gray-900 text-white font-mono text-xs p-4 rounded-lg h-80 overflow-y-auto">
@@ -178,7 +185,7 @@
     <div id="custom-modal" class="modal-backdrop">
         <div class="modal-content text-center">
             <h3 id="modal-title" class="text-2xl font-bold mb-4">Notification</h3>
-            <p id="modal-message" class="text-gray-600 mb-6" style="white-space: pre-wrap; word-wrap: break-word;"></p>
+            <p id="modal-message" class="text-gray-600 dark:text-gray-300 mb-6" style="white-space: pre-wrap; word-wrap: break-word;"></p>
             <button id="modal-close-btn" class="bg-blue-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-blue-700 transition duration-300">Close</button>
         </div>
     </div>
@@ -966,12 +973,12 @@
             reviewPlaceholder.style.display = 'none';
             pendingReceipts.sort((a, b) => b.emailNumber - a.emailNumber).forEach(receipt => {
                 const card = document.createElement('div');
-                const bgClass = receipt.isDuplicate ? 'bg-yellow-50 border-yellow-200' : 'bg-gray-50 border-gray-200';
+                const bgClass = receipt.isDuplicate ? 'bg-yellow-50 dark:bg-yellow-900/30 border-yellow-200 dark:border-yellow-700' : 'bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600';
                 card.className = `fade-in ${bgClass} p-4 rounded-lg border flex flex-col sm:flex-row sm:items-center sm:justify-between`;
                 card.id = `receipt-${receipt.id}`;
                 
                 const duplicateBadge = receipt.isDuplicate 
-                    ? `<span class="inline-block bg-yellow-200 text-yellow-800 text-xs px-2 py-1 rounded-full font-bold mb-2"><i class="fas fa-exclamation-triangle mr-1"></i> Potential Duplicate</span>` 
+                    ? `<span class="inline-block bg-yellow-200 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200 text-xs px-2 py-1 rounded-full font-bold mb-2"><i class="fas fa-exclamation-triangle mr-1"></i> Potential Duplicate</span>` 
                     : '';
 
                 card.innerHTML = `
@@ -981,10 +988,10 @@
                             <p class="font-bold text-lg">${receipt.vendor || 'Unknown'}</p>
                             <a href="#" onclick="jumpToLog(${receipt.logIndex}); return false;" class="text-xs text-blue-500 hover:underline ml-2">Email ${receipt.emailNumber}/${receipt.totalEmails}</a>
                         </div>
-                        <p class="text-gray-600">${receipt.description || 'No desc'}</p>
+                        <p class="text-gray-600 dark:text-gray-400">${receipt.description || 'No desc'}</p>
                         <div class="flex items-center mt-1">
-                            <p class="text-sm text-gray-400">${receipt.date}</p>
-                            <span class="mx-2 text-gray-300">&bull;</span>
+                            <p class="text-sm text-gray-400 dark:text-gray-500">${receipt.date}</p>
+                            <span class="mx-2 text-gray-300 dark:text-gray-600">&bull;</span>
                             <p class="text-sm font-medium text-indigo-600">${receipt.category || 'Unclassified'}</p>
                         </div>
                     </div>
@@ -1087,6 +1094,24 @@
         endDateInput.value = today.toISOString().split('T')[0];
         startDateInput.value = past.toISOString().split('T')[0];
         
+        // --- DARK MODE ---
+        const darkToggle = document.getElementById('dark-mode-toggle');
+        const darkIcon = document.getElementById('dark-mode-icon');
+        function applyDarkMode(dark) {
+            document.documentElement.classList.toggle('dark', dark);
+            darkIcon.className = dark ? 'fas fa-sun text-yellow-300' : 'fas fa-moon text-gray-600';
+            try { localStorage.setItem('dark_mode', dark ? '1' : '0'); } catch(e){}
+        }
+        // Init from localStorage or system preference
+        try {
+            const saved = localStorage.getItem('dark_mode');
+            if (saved !== null) applyDarkMode(saved === '1');
+            else applyDarkMode(window.matchMedia('(prefers-color-scheme: dark)').matches);
+        } catch(e) { applyDarkMode(false); }
+        darkToggle.addEventListener('click', () => {
+            applyDarkMode(!document.documentElement.classList.contains('dark'));
+        });
+
         // Initial UI Update
         updateUIState();
         window.handleApprove = handleApprove;
