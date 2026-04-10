@@ -718,8 +718,18 @@
                                 const data = await extractExpenseData(content, res.result.snippet, pdfDataArray);
                                 if (data && data.is_expense) {
                                     const norm = normalizeReceiptData(data);
-                                    if (!norm.date && res.result.internalDate) {
-                                        norm.date = new Date(parseInt(res.result.internalDate)).toISOString().split('T')[0];
+                                    const emailDate = res.result.internalDate
+                                        ? new Date(parseInt(res.result.internalDate)).toISOString().split('T')[0]
+                                        : null;
+                                    if (!norm.date && emailDate) {
+                                        norm.date = emailDate;
+                                    } else if (norm.date && emailDate) {
+                                        const extractedYear = new Date(norm.date).getFullYear();
+                                        const emailYear = new Date(emailDate).getFullYear();
+                                        if (Math.abs(extractedYear - emailYear) > 1) {
+                                            logActivity(`Date corrected for ${norm.vendor}: ${norm.date} -> ${emailDate} (year off by ${Math.abs(extractedYear - emailYear)})`, 'error');
+                                            norm.date = emailDate;
+                                        }
                                     }
                                     if (norm.vendor && norm.amount) {
                                         // Update State & Render Immediately
