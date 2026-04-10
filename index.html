@@ -620,7 +620,8 @@
             OUTPUT FORMAT:
             Return ONLY a JSON array containing the IDs of the NEW RECEIPTS that are duplicates.
             Example: ["msg_123", "msg_456"]
-            If no duplicates found, return [].`;
+            If no duplicates found, return [].
+            IMPORTANT: Do NOT write code, do NOT write explanations. Return ONLY the JSON array, nothing else.`;
 
             try {
                 // SWITCH: Use Gemini API Key if available, else Vertex AI
@@ -640,42 +641,53 @@
                     };
                 }
                 
-                const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: headers,
-                    body: JSON.stringify(payload)
-                });
+                // Try up to 2 times (retry once if Gemini returns code instead of JSON)
+                for (let attempt = 1; attempt <= 2; attempt++) {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: headers,
+                        body: JSON.stringify(payload)
+                    });
 
-                if (!response.ok) {
-                    const errBody = await response.text();
-                    logActivity(`Gemini duplicate API failed: HTTP ${response.status}`, 'error');
-                    addGeminiLog("DUPLICATE CHECK ERROR", prompt, `HTTP ${response.status}`, errBody, true);
-                    return [];
-                }
-                const result = await response.json();
-                const dupLogIndex = geminiLogs.length;
-                addGeminiLog("DUPLICATE CHECK PROMPT", prompt, `RESPONSE`, JSON.stringify(result, null, 2));
-                logActivity(`Duplicate check sent to Gemini.`, 'success', null, dupLogIndex);
-
-                if (result.candidates && result.candidates[0]?.content?.parts[0]?.text) {
-                    const text = result.candidates[0].content.parts[0].text;
-                    logActivity(`Gemini duplicate response: ${text.substring(0, 100)}`, 'success');
-                    const firstBracket = text.indexOf('[');
-                    const lastBracket = text.lastIndexOf(']');
-                    if (firstBracket !== -1 && lastBracket !== -1) {
-                        const ids = JSON.parse(text.substring(firstBracket, lastBracket + 1));
-                        logActivity(`Gemini found ${ids.length} duplicate IDs: ${JSON.stringify(ids).substring(0, 100)}`, 'success');
-                        return ids;
+                    if (!response.ok) {
+                        const errBody = await response.text();
+                        logActivity(`Gemini duplicate API failed: HTTP ${response.status}`, 'error');
+                        addGeminiLog("DUPLICATE CHECK ERROR", prompt, `HTTP ${response.status}`, errBody, true);
+                        return [];
                     }
-                    logActivity('Gemini response had no JSON array.', 'error');
-                } else {
-                    logActivity('Gemini returned no candidates for duplicate check.', 'error');
+                    const result = await response.json();
+                    const dupLogIndex = geminiLogs.length;
+                    addGeminiLog(`DUPLICATE CHECK PROMPT (attempt ${attempt})`, prompt, `RESPONSE`, JSON.stringify(result, null, 2));
+                    logActivity(`Duplicate check sent to Gemini (attempt ${attempt}).`, 'success', null, dupLogIndex);
+
+                    if (result.candidates && result.candidates[0]?.content?.parts[0]?.text) {
+                        const text = result.candidates[0].content.parts[0].text;
+                        logActivity(`Gemini response: ${text.substring(0, 100)}`, 'success');
+                        const firstBracket = text.indexOf('[');
+                        const lastBracket = text.lastIndexOf(']');
+                        if (firstBracket !== -1 && lastBracket !== -1) {
+                            try {
+                                const ids = JSON.parse(text.substring(firstBracket, lastBracket + 1));
+                                logActivity(`Gemini found ${ids.length} duplicate IDs: ${JSON.stringify(ids).substring(0, 100)}`, 'success');
+                                return ids;
+                            } catch (parseErr) {
+                                logActivity(`JSON parse failed (attempt ${attempt}): ${parseErr.message}`, 'error');
+                            }
+                        }
+                        if (attempt === 1) {
+                            logActivity('Gemini returned non-JSON (code?). Retrying...', 'error');
+                            continue;
+                        }
+                        logActivity('Gemini response had no valid JSON array after 2 attempts.', 'error');
+                    } else {
+                        logActivity('Gemini returned no candidates for duplicate check.', 'error');
+                    }
                 }
                 return [];
             } catch (error) {
                 logActivity(`Duplicate check error: ${error.message}`, 'error');
                 console.error("Batch Duplicate Check Failed:", error);
-                addGeminiLog("DUPLICATE CHECK ERROR", prompt, "ERROR", error.message, true);
+                addGeminiLog("DUPLICATE CHECK ERROR", "See previous log", "ERROR", error.message, true);
                 return [];
             }
         }
