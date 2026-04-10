@@ -718,9 +718,9 @@
                 pendingReceipts = [];
                 let scannedCount = 0;
 
-                // Process in batches of 5 to avoid Gmail API rate limits (429)
-                for (let i = 0; i < allMessages.length; i += 5) {
-                    const batch = allMessages.slice(i, i + 5);
+                // Process in batches of 10, 4s delay (Gemini Tier 1: 150 RPM, Gmail: 250 quota units/s)
+                for (let i = 0; i < allMessages.length; i += 10) {
+                    const batch = allMessages.slice(i, i + 10);
                     const batchPromises = batch.map(async (msg, idx) => {
                         if (processedMessageIds.has(msg.id)) return;
                         try {
@@ -764,7 +764,7 @@
                         logActivity(`Analyzed ${scannedCount}/${allMessages.length}. Found ${pendingReceipts.length} expenses.`, 'success', 'scan-status');
                     });
                     await Promise.all(batchPromises);
-                    if (i + 5 < allMessages.length) await new Promise(r => setTimeout(r, 500));
+                    if (i + 10 < allMessages.length) await new Promise(r => setTimeout(r, 4000));
                 }
 
                 logActivity('Scan complete. Checking for duplicates...', 'success');
@@ -856,7 +856,7 @@
             const categories = "Telco, Utilities, Transport, Unclassified, Insurance, Pets, Groceries, Wedding, Renovation, Hardware, Household, Holidays, Eating out, Services, Clothes, Taxes, Gifts, Education, Leisure, Health & Personal Care";
             const hasPdfs = pdfDataArray.length > 0;
             const cleanedEmail = emailContent ? emailContent.replace(/<style[^>]*>.*<\/style>/gs, "").replace(/<[^>]+>/g, ' ').substring(0, 3000) : '';
-            const prompt = `Analyze this email${hasPdfs ? ' and its PDF attachment(s)' : ''}. Is it an expense? If NO, return {"is_expense": false}. If YES, extract: vendor, amount, currency (e.g. USD), date (YYYY-MM-DD), description, category (choose from: ${categories}). Return minified JSON.${cleanedEmail ? ` Email: --- ${cleanedEmail} ---` : ''}${hasPdfs ? ' PDF attachment(s) are provided below.' : ''}`;
+            const prompt = `Analyze this email${hasPdfs ? ' and its PDF attachment(s)' : ''}. Is it an expense? If NO, return {"is_expense": false}. If YES, extract: vendor, amount, currency (e.g. USD), date (YYYY-MM-DD), description, category (choose from: ${categories}). For the date: use the payment due date, charge date, or transaction date - NOT the statement/issue date. For example, if a bill says "as of 7 Apr" but "due on 21 Apr", use 2026-04-21. Return minified JSON.${cleanedEmail ? ` Email: --- ${cleanedEmail} ---` : ''}${hasPdfs ? ' PDF attachment(s) are provided below.' : ''}`;
 
             try {
                 // SWITCH: Use Gemini API Key if available, else Vertex AI
