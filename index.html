@@ -533,30 +533,46 @@
             let allEntries = [];
             let page = 0;
             let hasMore = true;
-            const perPage = 500; 
+            const perPage = 500;
             const f = (d) => d.split('T')[0];
 
+            if (!CORS_PROXY_URL) {
+                logActivity('Toshl fetch skipped: No CORS Proxy URL configured.', 'error');
+                return [];
+            }
+
             try {
-                logActivity('Background: Checking Toshl for duplicates...', 'default');
+                logActivity(`Fetching Toshl entries (${f(from)} to ${f(to)})...`, 'success', 'toshl-fetch');
                 while (hasMore) {
                     const url = `https://api.toshl.com/entries?from=${f(from)}&to=${f(to)}&type=expense&page=${page}&per_page=${perPage}`;
-                    // PROXY SWITCH: Used your Cloudflare worker
                     const proxyUrl = CORS_PROXY_URL + encodeURIComponent(url);
+                    logActivity(`Toshl API page ${page}...`, 'success', 'toshl-fetch');
                     const response = await fetch(proxyUrl, { headers: { 'Authorization': `Bearer ${TOSH_API_TOKEN}` } });
-                    if (!response.ok) throw new Error('Failed to fetch Toshl entries');
+                    if (!response.ok) {
+                        const body = await response.text();
+                        logActivity(`Toshl fetch failed: HTTP ${response.status} - ${body.substring(0, 100)}`, 'error');
+                        throw new Error(`Toshl HTTP ${response.status}`);
+                    }
                     const data = await response.json();
+                    logActivity(`Toshl page ${page}: got ${data.length} entries`, 'success', 'toshl-fetch');
                     allEntries = allEntries.concat(data);
                     if (data.length < perPage) hasMore = false; else page++;
                 }
+                logActivity(`Toshl: ${allEntries.length} existing entries found for duplicate check.`, 'success', 'toshl-fetch');
                 return allEntries;
             } catch (error) {
+                logActivity(`Toshl fetch error: ${error.message}`, 'error');
                 console.error("Toshl Fetch Error:", error);
                 return [];
             }
         }
 
         async function detectDuplicatesBatch(newReceipts, existingEntries) {
-            if (!newReceipts.length || !existingEntries.length) return [];
+            if (!newReceipts.length || !existingEntries.length) {
+                logActivity(`Duplicate skip: ${newReceipts.length} receipts vs ${existingEntries.length} existing. Need both > 0.`, 'error');
+                return [];
+            }
+            logActivity(`Comparing ${newReceipts.length} receipts against ${existingEntries.length} Toshl entries...`, 'success');
             const f = (d) => d ? d.split('T')[0] : 'N/A';
             
             const newReceiptsList = newReceipts.map(r => 
@@ -615,20 +631,32 @@
                     body: JSON.stringify(payload)
                 });
 
-                if (!response.ok) throw new Error('Gemini API Error');
+                if (!response.ok) {
+                    const errBody = await response.text();
+                    logActivity(`Gemini duplicate API failed: HTTP ${response.status}`, 'error');
+                    addGeminiLog("DUPLICATE CHECK ERROR", prompt, `HTTP ${response.status}`, errBody, true);
+                    return [];
+                }
                 const result = await response.json();
                 addGeminiLog("DUPLICATE CHECK", prompt, `RESPONSE`, JSON.stringify(result, null, 2));
 
                 if (result.candidates && result.candidates[0]?.content?.parts[0]?.text) {
                     const text = result.candidates[0].content.parts[0].text;
+                    logActivity(`Gemini duplicate response: ${text.substring(0, 100)}`, 'success');
                     const firstBracket = text.indexOf('[');
                     const lastBracket = text.lastIndexOf(']');
                     if (firstBracket !== -1 && lastBracket !== -1) {
-                        return JSON.parse(text.substring(firstBracket, lastBracket + 1));
+                        const ids = JSON.parse(text.substring(firstBracket, lastBracket + 1));
+                        logActivity(`Gemini found ${ids.length} duplicate IDs: ${JSON.stringify(ids).substring(0, 100)}`, 'success');
+                        return ids;
                     }
+                    logActivity('Gemini response had no JSON array.', 'error');
+                } else {
+                    logActivity('Gemini returned no candidates for duplicate check.', 'error');
                 }
                 return [];
             } catch (error) {
+                logActivity(`Duplicate check error: ${error.message}`, 'error');
                 console.error("Batch Duplicate Check Failed:", error);
                 addGeminiLog("DUPLICATE CHECK ERROR", prompt, "ERROR", error.message, true);
                 return [];
