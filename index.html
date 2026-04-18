@@ -133,6 +133,17 @@
                 </div>
 
                 <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md">
+                    <h2 class="text-xl font-bold mb-4">Card &rarr; Tag Mappings</h2>
+                    <p class="text-xs text-gray-400 dark:text-gray-500 mb-3">Map card last-4 digits to Toshl tags (used when uploading statements).</p>
+                    <div id="card-mappings-list" class="space-y-2 mb-3"></div>
+                    <div class="flex space-x-2">
+                        <input type="text" id="card-last4-input" placeholder="Last 4" maxlength="4" class="w-20 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                        <input type="text" id="card-tag-input" placeholder="Tag name" class="flex-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                        <button id="add-card-mapping-btn" class="bg-blue-500 text-white font-bold px-3 py-2 rounded-lg hover:bg-blue-600 transition text-sm"><i class="fas fa-plus"></i></button>
+                    </div>
+                </div>
+
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md">
                     <h2 class="text-xl font-bold mb-4">Manual Scan</h2>
                     <div class="space-y-4">
                         <div>
@@ -149,6 +160,22 @@
                         </button>
                     </div>
                     <p id="scan-helper-text" class="text-xs text-gray-400 dark:text-gray-500 mt-3 text-center">Connect services to enable.</p>
+                </div>
+
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md">
+                    <h2 class="text-xl font-bold mb-4">Statement Upload</h2>
+                    <p class="text-xs text-gray-400 dark:text-gray-500 mb-3">Upload bank or credit card statement PDFs to check against Toshl.</p>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">PDF Statements</label>
+                            <input type="file" id="statement-file-input" accept=".pdf" multiple class="block w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 dark:file:bg-indigo-900 dark:file:text-indigo-200 hover:file:bg-indigo-100 dark:hover:file:bg-indigo-800">
+                        </div>
+                        <button id="analyze-statements-btn" class="w-full bg-gray-400 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center cursor-not-allowed" disabled>
+                            <i class="fas fa-file-pdf mr-2"></i>
+                            <span id="analyze-btn-text">Analyze Statements</span>
+                        </button>
+                    </div>
+                    <p id="statement-helper-text" class="text-xs text-gray-400 dark:text-gray-500 mt-3 text-center">Select PDFs and connect Toshl + Gemini to enable.</p>
                 </div>
 
                 <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md">
@@ -218,6 +245,8 @@
         let processedMessageIds = new Set();
         let geminiLogs = [];
         let currentLogIndex = -1;
+        let cardTagMappings = [];
+        try { cardTagMappings = JSON.parse(localStorage.getItem('card_tag_mappings') || '[]'); } catch(e) {}
 
         // --- DOM ELEMENTS ---
         const googleStatusDot = document.getElementById('google-status-dot');
@@ -270,6 +299,16 @@
         const modalMessage = document.getElementById('modal-message');
         const modalCloseBtn = document.getElementById('modal-close-btn');
 
+        const cardMappingsList = document.getElementById('card-mappings-list');
+        const cardLast4Input = document.getElementById('card-last4-input');
+        const cardTagInput = document.getElementById('card-tag-input');
+        const addCardMappingBtn = document.getElementById('add-card-mapping-btn');
+
+        const statementFileInput = document.getElementById('statement-file-input');
+        const analyzeStatementsBtn = document.getElementById('analyze-statements-btn');
+        const analyzeBtnText = document.getElementById('analyze-btn-text');
+        const statementHelperText = document.getElementById('statement-helper-text');
+
         let isGoogleConnected = false;
 
         // --- UI UTILITIES ---
@@ -280,6 +319,46 @@
         }
 
         modalCloseBtn.addEventListener('click', () => modal.classList.remove('visible'));
+
+        // --- CARD TAG MAPPING ---
+        function renderCardMappings() {
+            cardMappingsList.innerHTML = '';
+            if (cardTagMappings.length === 0) {
+                cardMappingsList.innerHTML = '<p class="text-xs text-gray-400 dark:text-gray-500">No mappings yet.</p>';
+                return;
+            }
+            cardTagMappings.forEach(m => {
+                const row = document.createElement('div');
+                row.className = 'flex items-center justify-between bg-gray-50 dark:bg-gray-700 rounded-lg px-3 py-2 text-sm';
+                row.innerHTML = `<span><span class="font-mono font-bold">****${m.cardLastFour}</span> &rarr; <span class="text-indigo-600 dark:text-indigo-400 font-medium">${m.tagName}</span></span>
+                    <button onclick="removeCardMapping('${m.cardLastFour}')" class="text-red-400 hover:text-red-600 ml-2"><i class="fas fa-trash-alt text-xs"></i></button>`;
+                cardMappingsList.appendChild(row);
+            });
+        }
+
+        function addCardMapping(last4, tagName) {
+            if (!last4 || !tagName) return;
+            last4 = last4.replace(/\D/g, '').slice(-4);
+            if (last4.length < 4) { showModal('Error', 'Card number must be 4 digits.'); return; }
+            cardTagMappings = cardTagMappings.filter(m => m.cardLastFour !== last4);
+            cardTagMappings.push({ cardLastFour: last4, tagName: tagName.trim() });
+            try { localStorage.setItem('card_tag_mappings', JSON.stringify(cardTagMappings)); } catch(e) {}
+            renderCardMappings();
+        }
+
+        function removeCardMapping(last4) {
+            cardTagMappings = cardTagMappings.filter(m => m.cardLastFour !== last4);
+            try { localStorage.setItem('card_tag_mappings', JSON.stringify(cardTagMappings)); } catch(e) {}
+            renderCardMappings();
+        }
+
+        addCardMappingBtn.addEventListener('click', () => {
+            addCardMapping(cardLast4Input.value, cardTagInput.value);
+            cardLast4Input.value = '';
+            cardTagInput.value = '';
+        });
+
+        renderCardMappings();
 
         function logActivity(message, type = 'success', id = null, logIndex = -1) {
             if (id) {
@@ -387,6 +466,23 @@
                 scanGmailBtn.disabled = true;
                 scanHelperText.style.display = 'block';
                 scanGmailBtn.className = 'w-full bg-gray-400 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center cursor-not-allowed';
+            }
+
+            updateStatementBtnState();
+        }
+
+        function updateStatementBtnState() {
+            const hasFiles = statementFileInput.files && statementFileInput.files.length > 0;
+            const hasGemini = (GEMINI_API_KEY && GEMINI_API_KEY.length > 10) || (isGoogleConnected && GOOGLE_CLOUD_PROJECT_ID);
+            const hasToshl = TOSH_API_TOKEN && TOSH_API_TOKEN.length > 5 && CORS_PROXY_URL;
+            if (hasFiles && hasGemini && hasToshl) {
+                analyzeStatementsBtn.disabled = false;
+                statementHelperText.style.display = 'none';
+                analyzeStatementsBtn.className = 'w-full bg-purple-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-purple-700 transition duration-300 flex items-center justify-center cursor-pointer';
+            } else {
+                analyzeStatementsBtn.disabled = true;
+                statementHelperText.style.display = 'block';
+                analyzeStatementsBtn.className = 'w-full bg-gray-400 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center cursor-not-allowed';
             }
         }
 
@@ -533,6 +629,9 @@
         });
 
         scanGmailBtn.addEventListener('click', scanGmail);
+
+        statementFileInput.addEventListener('change', updateStatementBtnState);
+        analyzeStatementsBtn.addEventListener('click', processStatements);
 
         // --- CORE LOGIC ---
         
@@ -753,7 +852,7 @@
                                     }
                                     if (norm.vendor && norm.amount) {
                                         // Update State & Render Immediately
-                                        pendingReceipts.unshift({ ...norm, id: msg.id, emailNumber: i + idx + 1, totalEmails: allMessages.length, logIndex: geminiLogs.length - 1 });
+                                        pendingReceipts.unshift({ ...norm, id: msg.id, source: 'email', emailNumber: i + idx + 1, totalEmails: allMessages.length, logIndex: geminiLogs.length - 1 });
                                         processedMessageIds.add(msg.id);
                                         renderReviewQueue(); // STREAMING RESTORED
                                     }
@@ -787,7 +886,9 @@
                     // Final Render with Duplicate Warnings
                     renderReviewQueue();
                     logActivity(`Duplicate check done. Found ${duplicateIds.length} matches.`, 'success');
-                } 
+
+                    await crossReferenceReceipts();
+                }
 
             } catch (err) {
                 console.error(err);
@@ -905,7 +1006,284 @@
                 return null;
             }
         }
-        
+
+        // --- STATEMENT UPLOAD LOGIC ---
+
+        async function readPdfFiles(fileList) {
+            const results = [];
+            for (const file of fileList) {
+                const data = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        const bytes = new Uint8Array(reader.result);
+                        let binary = '';
+                        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+                        resolve(btoa(binary));
+                    };
+                    reader.onerror = reject;
+                    reader.readAsArrayBuffer(file);
+                });
+                results.push({ data, filename: file.name });
+            }
+            return results;
+        }
+
+        async function extractStatementData(pdfDataArray) {
+            const categories = "Telco, Utilities, Transport, Unclassified, Insurance, Pets, Groceries, Wedding, Renovation, Hardware, Household, Holidays, Eating out, Services, Clothes, Taxes, Gifts, Education, Leisure, Health & Personal Care";
+            const prompt = `You are analyzing a bank or credit card statement PDF. Extract ALL individual transaction line items that are charges/expenses (NOT payments, credits, or refunds).
+
+For each transaction extract: date (YYYY-MM-DD), vendor (merchant name), description (brief), amount (positive number), currency (ISO code e.g. SGD, USD), category (choose from: ${categories}).
+
+Also identify the card number's last 4 digits from the statement header/summary.
+
+Return a JSON object: {"card_last_four": "7948", "transactions": [{"date": "2026-01-15", "vendor": "Starbucks", "description": "Coffee", "amount": 12.50, "currency": "SGD", "category": "Eating out"}, ...]}
+
+Rules:
+- Only include expense/charge transactions (positive amounts billed to the customer)
+- Skip payments, credits, refunds, interest charges, fees, and balance entries
+- Use the actual transaction date, not the posting date or statement date
+- If the currency is not explicit per transaction, use the statement's default currency
+- Return minified JSON only, no explanations`;
+
+            try {
+                let apiUrl, headers;
+                const parts = [{ text: prompt }];
+                for (const pdf of pdfDataArray) {
+                    parts.push({ inline_data: { mime_type: "application/pdf", data: pdf.data } });
+                }
+                const payload = { contents: [{ role: "user", parts }] };
+
+                if (GEMINI_API_KEY) {
+                    apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+                    headers = { 'Content-Type': 'application/json' };
+                } else {
+                    const location = 'us-central1';
+                    const model = 'gemini-2.5-flash';
+                    apiUrl = `https://us-central1-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_ID}/locations/${location}/publishers/google/models/${model}:generateContent`;
+                    headers = {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${gapi.client.getToken().access_token}`
+                    };
+                }
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+                addGeminiLog("STATEMENT PARSE", prompt, "RESPONSE", JSON.stringify(result, null, 2));
+
+                if (result.candidates && result.candidates[0]?.content?.parts[0]?.text) {
+                    let text = result.candidates[0].content.parts[0].text.trim();
+                    text = text.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+                    const jsonStart = text.indexOf('{');
+                    const jsonEnd = text.lastIndexOf('}');
+                    if (jsonStart !== -1 && jsonEnd !== -1) {
+                        return JSON.parse(text.substring(jsonStart, jsonEnd + 1));
+                    }
+                }
+                return null;
+            } catch (error) {
+                console.error('extractStatementData:', error);
+                addGeminiLog("STATEMENT PARSE ERROR", prompt, "ERROR", error.message, true);
+                return null;
+            }
+        }
+
+        async function processStatements() {
+            const files = statementFileInput.files;
+            if (!files || files.length === 0) return;
+
+            analyzeStatementsBtn.disabled = true;
+            analyzeBtnText.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Analyzing...';
+            logActivity('Reading PDF statements...', 'success', 'stmt-status');
+
+            try {
+                const pdfDataArray = await readPdfFiles(files);
+                logActivity(`Read ${pdfDataArray.length} PDF file(s). Sending to Gemini...`, 'success', 'stmt-status');
+
+                let allTransactions = [];
+
+                for (let i = 0; i < pdfDataArray.length; i++) {
+                    const pdf = pdfDataArray[i];
+                    logActivity(`Analyzing ${pdf.filename} (${i + 1}/${pdfDataArray.length})...`, 'success', 'stmt-status');
+                    const data = await extractStatementData([pdf]);
+
+                    if (data && data.transactions && data.transactions.length > 0) {
+                        const tagMapping = data.card_last_four
+                            ? cardTagMappings.find(m => m.cardLastFour === data.card_last_four)
+                            : null;
+
+                        data.transactions.forEach((tx, idx) => {
+                            allTransactions.push({
+                                ...tx,
+                                id: `stmt_${pdf.filename.replace(/[^a-zA-Z0-9]/g, '_')}_${idx}`,
+                                source: 'statement',
+                                tag: tagMapping ? tagMapping.tagName : null,
+                                cardLastFour: data.card_last_four || null,
+                                emailNumber: idx + 1,
+                                totalEmails: data.transactions.length,
+                                logIndex: geminiLogs.length - 1
+                            });
+                        });
+                        logActivity(`${pdf.filename}: ${data.transactions.length} transactions found (card: ****${data.card_last_four || '????'})`, 'success');
+                    } else {
+                        logActivity(`${pdf.filename}: No transactions extracted.`, 'error');
+                    }
+
+                    if (i + 1 < pdfDataArray.length) await new Promise(r => setTimeout(r, 2000));
+                }
+
+                if (allTransactions.length === 0) {
+                    logActivity('No transactions found in any statement.', 'error');
+                    return;
+                }
+
+                logActivity(`Total: ${allTransactions.length} transactions. Checking duplicates...`, 'success', 'stmt-status');
+
+                const allDates = allTransactions.map(t => t.date).filter(Boolean).sort();
+                const bufferFrom = new Date(new Date(allDates[0]).getTime() - 7 * 86400000).toISOString().split('T')[0];
+                const bufferTo = new Date(new Date(allDates[allDates.length - 1]).getTime() + 7 * 86400000).toISOString().split('T')[0];
+
+                const existing = await getExistingToshlEntries(bufferFrom, bufferTo);
+                const duplicateIds = await detectDuplicatesBatch(allTransactions, existing);
+
+                allTransactions.forEach(tx => {
+                    tx.isDuplicate = duplicateIds.includes(tx.id);
+                    pendingReceipts.unshift(tx);
+                });
+
+                renderReviewQueue();
+                logActivity(`Statement analysis complete. ${allTransactions.length} transactions, ${duplicateIds.length} duplicates.`, 'success', 'stmt-status');
+
+                await crossReferenceReceipts();
+
+            } catch (err) {
+                console.error(err);
+                showModal('Error', err.message);
+                logActivity(err.message, 'error');
+            } finally {
+                analyzeBtnText.innerHTML = '<i class="fas fa-file-pdf mr-2"></i>Analyze Statements';
+                updateStatementBtnState();
+            }
+        }
+
+        // --- CROSS-SOURCE ENRICHMENT ---
+        async function crossReferenceReceipts() {
+            const stmtItems = pendingReceipts.filter(r => r.source === 'statement');
+            const emailItems = pendingReceipts.filter(r => r.source === 'email');
+
+            if (stmtItems.length === 0 || emailItems.length === 0) return;
+
+            logActivity(`Cross-referencing ${stmtItems.length} statement items with ${emailItems.length} email receipts...`, 'success', 'xref-status');
+
+            const f = (d) => d ? d.split('T')[0] : 'N/A';
+            const stmtList = stmtItems.map(r =>
+                `ID: ${r.id} | Date: ${f(r.date)} | Amt: ${r.amount} ${r.currency} | Vendor: ${r.vendor}`
+            ).join('\n');
+            const emailList = emailItems.map(r =>
+                `ID: ${r.id} | Date: ${f(r.date)} | Amt: ${r.amount} ${r.currency} | Vendor: ${r.vendor}`
+            ).join('\n');
+
+            const prompt = `You are matching bank statement transactions to email receipts for the same purchases.
+
+--- STATEMENT TRANSACTIONS ---
+${stmtList}
+
+--- EMAIL RECEIPTS ---
+${emailList}
+
+Match statement items to email receipts. A match means they represent the SAME purchase.
+Matching rules:
+- Amount must match exactly (same number and currency)
+- Date must be within ±3 days
+- Vendor name should be similar (bank statements abbreviate/truncate names, e.g. "STARBUCKS ORCHARD" matches "Starbucks Coffee")
+- Currency must match
+
+Return ONLY a JSON array of matched pairs: [{"statementId": "stmt_...", "emailId": "msg_..."}]
+If no matches found, return [].
+IMPORTANT: Return ONLY the JSON array, no code, no explanations.`;
+
+            try {
+                let apiUrl, headers;
+                const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
+
+                if (GEMINI_API_KEY) {
+                    apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+                    headers = { 'Content-Type': 'application/json' };
+                } else {
+                    const location = 'us-central1';
+                    const model = 'gemini-2.5-flash';
+                    apiUrl = `https://us-central1-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_ID}/locations/${location}/publishers/google/models/${model}:generateContent`;
+                    headers = {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${gapi.client.getToken().access_token}`
+                    };
+                }
+
+                const response = await fetch(apiUrl, { method: 'POST', headers, body: JSON.stringify(payload) });
+                const result = await response.json();
+                addGeminiLog("CROSS-REFERENCE", prompt, "RESPONSE", JSON.stringify(result, null, 2));
+
+                if (!result.candidates || !result.candidates[0]?.content?.parts[0]?.text) {
+                    logActivity('Cross-reference: no response from Gemini.', 'error');
+                    return;
+                }
+
+                const text = result.candidates[0].content.parts[0].text;
+                const firstBracket = text.indexOf('[');
+                const lastBracket = text.lastIndexOf(']');
+                if (firstBracket === -1 || lastBracket === -1) {
+                    logActivity('Cross-reference: no matches found.', 'success', 'xref-status');
+                    return;
+                }
+
+                const pairs = JSON.parse(text.substring(firstBracket, lastBracket + 1));
+                if (!pairs.length) {
+                    logActivity('Cross-reference: no matches found.', 'success', 'xref-status');
+                    return;
+                }
+
+                let mergedCount = 0;
+                for (const pair of pairs) {
+                    const stmtItem = pendingReceipts.find(r => r.id === pair.statementId);
+                    const emailItem = pendingReceipts.find(r => r.id === pair.emailId);
+                    if (!stmtItem || !emailItem) continue;
+
+                    const merged = {
+                        id: emailItem.id,
+                        date: stmtItem.date,
+                        amount: stmtItem.amount,
+                        currency: stmtItem.currency,
+                        vendor: emailItem.vendor,
+                        description: emailItem.description,
+                        category: emailItem.category,
+                        source: 'combined',
+                        tag: stmtItem.tag || emailItem.tag || null,
+                        cardLastFour: stmtItem.cardLastFour || null,
+                        statementRef: stmtItem.vendor,
+                        isDuplicate: stmtItem.isDuplicate || emailItem.isDuplicate,
+                        emailNumber: emailItem.emailNumber,
+                        totalEmails: emailItem.totalEmails,
+                        logIndex: emailItem.logIndex
+                    };
+
+                    pendingReceipts = pendingReceipts.filter(r => r.id !== pair.statementId && r.id !== pair.emailId);
+                    pendingReceipts.unshift(merged);
+                    mergedCount++;
+                }
+
+                renderReviewQueue();
+                logActivity(`Cross-reference: ${mergedCount} item(s) merged from statement + email.`, 'success', 'xref-status');
+
+            } catch (error) {
+                logActivity(`Cross-reference error: ${error.message}`, 'error');
+                console.error("Cross-reference failed:", error);
+            }
+        }
+
         async function postToToshl(receipt) {
             try {
                 // Find/Create Category
@@ -926,12 +1304,13 @@
                     if (catRes.status === 201) catId = catRes.headers.get('Location').split('/').pop();
                 }
 
-                // Find/Create Tag
+                // Find/Create Tag (use card tag if mapped, else Script_Added)
+                const desiredTagName = receipt.tag || 'Script_Added';
                 // PROXY SWITCH
                 const tagUrl = CORS_PROXY_URL + encodeURIComponent('https://api.toshl.com/tags');
                 let tagRes = await fetch(tagUrl, { headers: {'Authorization': `Bearer ${TOSH_API_TOKEN}`} });
                 let tags = await tagRes.json();
-                let tagId = tags.find(t => t.name.toLowerCase() === 'script_added')?.id;
+                let tagId = tags.find(t => t.name.toLowerCase() === desiredTagName.toLowerCase())?.id;
 
                 if (!tagId) {
                     // PROXY SWITCH
@@ -939,7 +1318,7 @@
                     tagRes = await fetch(createTagUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOSH_API_TOKEN}` },
-                        body: JSON.stringify({ name: 'Script_Added', type: 'expense' })
+                        body: JSON.stringify({ name: desiredTagName, type: 'expense' })
                     });
                     if (tagRes.status === 201) tagId = tagRes.headers.get('Location').split('/').pop();
                 }
@@ -988,19 +1367,46 @@
                 const bgClass = receipt.isDuplicate ? 'bg-yellow-50 dark:bg-yellow-900/30 border-yellow-200 dark:border-yellow-700' : 'bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600';
                 card.className = `fade-in ${bgClass} p-4 rounded-lg border flex flex-col sm:flex-row sm:items-center sm:justify-between`;
                 card.id = `receipt-${receipt.id}`;
-                
-                const duplicateBadge = receipt.isDuplicate 
-                    ? `<span class="inline-block bg-yellow-200 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200 text-xs px-2 py-1 rounded-full font-bold mb-2"><i class="fas fa-exclamation-triangle mr-1"></i> Potential Duplicate</span>` 
+
+                const isStatement = receipt.source === 'statement';
+                const isCombined = receipt.source === 'combined';
+                const hasEmailId = !isStatement;
+
+                let badges = '';
+                if (receipt.isDuplicate) {
+                    badges += `<span class="inline-block bg-yellow-200 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200 text-xs px-2 py-1 rounded-full font-bold mb-2 mr-1"><i class="fas fa-exclamation-triangle mr-1"></i> Potential Duplicate</span>`;
+                }
+                if (isCombined) {
+                    badges += `<span class="inline-block bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-200 text-xs px-2 py-1 rounded-full font-bold mb-2 mr-1"><i class="fas fa-link mr-1"></i> Verified (Statement + Email)</span>`;
+                }
+                if (receipt.tag) {
+                    badges += `<span class="inline-block bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-200 text-xs px-2 py-1 rounded-full font-medium mb-2">${receipt.tag}</span>`;
+                }
+
+                const sourceLabel = isStatement
+                    ? `<span class="text-xs text-purple-500">Statement</span>`
+                    : `<a href="#" onclick="jumpToLog(${receipt.logIndex}); return false;" class="text-xs text-blue-500 hover:underline ml-2">Email ${receipt.emailNumber}/${receipt.totalEmails}</a>`;
+
+                const statementRef = isCombined && receipt.statementRef
+                    ? `<p class="text-xs text-gray-400 dark:text-gray-500 italic mt-1">Statement: ${receipt.statementRef}</p>`
+                    : '';
+
+                const approveDeleteBtn = hasEmailId
+                    ? `<button onclick="handleApproveAndDelete('${receipt.id}')" id="btn-ad-${receipt.id}" title="Approve &amp; Delete Email" class="${receipt.isDuplicate ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-green-700 hover:bg-green-800'} text-white px-3 py-2 rounded-lg transition"><i class="fas fa-check"></i><i class="fas fa-trash ml-1 text-xs"></i></button>`
+                    : '';
+                const rejectDeleteBtn = hasEmailId
+                    ? `<button onclick="handleRejectAndDelete('${receipt.id}')" id="btn-rd-${receipt.id}" title="Reject &amp; Delete Email" class="bg-red-700 text-white px-3 py-2 rounded-lg hover:bg-red-800 transition"><i class="fas fa-times"></i><i class="fas fa-trash ml-1 text-xs"></i></button>`
                     : '';
 
                 card.innerHTML = `
                     <div class="flex-grow mb-4 sm:mb-0">
-                        ${duplicateBadge}
+                        ${badges}
                         <div class="flex items-center justify-between">
                             <p class="font-bold text-lg">${receipt.vendor || 'Unknown'}</p>
-                            <a href="#" onclick="jumpToLog(${receipt.logIndex}); return false;" class="text-xs text-blue-500 hover:underline ml-2">Email ${receipt.emailNumber}/${receipt.totalEmails}</a>
+                            ${sourceLabel}
                         </div>
                         <p class="text-gray-600 dark:text-gray-400">${receipt.description || 'No desc'}</p>
+                        ${statementRef}
                         <div class="flex items-center mt-1">
                             <p class="text-sm text-gray-400 dark:text-gray-500">${receipt.date}</p>
                             <span class="mx-2 text-gray-300 dark:text-gray-600">&bull;</span>
@@ -1010,9 +1416,9 @@
                     <div class="flex items-center space-x-2">
                         <p class="text-xl font-bold text-right w-32">${parseFloat(receipt.amount).toFixed(2)} ${receipt.currency}</p>
                         <button onclick="handleApprove('${receipt.id}')" id="btn-${receipt.id}" title="Approve" class="${receipt.isDuplicate ? 'bg-yellow-400 hover:bg-yellow-500' : 'bg-green-500 hover:bg-green-600'} text-white px-3 py-2 rounded-lg transition"><i class="fas fa-check"></i></button>
-                        <button onclick="handleApproveAndDelete('${receipt.id}')" id="btn-ad-${receipt.id}" title="Approve &amp; Delete Email" class="${receipt.isDuplicate ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-green-700 hover:bg-green-800'} text-white px-3 py-2 rounded-lg transition"><i class="fas fa-check"></i><i class="fas fa-trash ml-1 text-xs"></i></button>
+                        ${approveDeleteBtn}
                         <button onclick="handleReject('${receipt.id}')" title="Reject" class="bg-red-500 text-white px-3 py-2 rounded-lg hover:bg-red-600 transition"><i class="fas fa-times"></i></button>
-                        <button onclick="handleRejectAndDelete('${receipt.id}')" id="btn-rd-${receipt.id}" title="Reject &amp; Delete Email" class="bg-red-700 text-white px-3 py-2 rounded-lg hover:bg-red-800 transition"><i class="fas fa-times"></i><i class="fas fa-trash ml-1 text-xs"></i></button>
+                        ${rejectDeleteBtn}
                     </div>`;
                 reviewQueueContainer.appendChild(card);
             });
@@ -1130,6 +1536,7 @@
         window.handleReject = handleReject;
         window.handleApproveAndDelete = handleApproveAndDelete;
         window.handleRejectAndDelete = handleRejectAndDelete;
+        window.removeCardMapping = removeCardMapping;
 
     </script>
     <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
