@@ -1256,7 +1256,14 @@
             const categories = "Telco, Utilities, Transport, Unclassified, Insurance, Pets, Groceries, Wedding, Renovation, Hardware, Household, Holidays, Eating out, Services, Clothes, Taxes, Gifts, Education, Leisure, Health & Personal Care";
             const hasPdfs = pdfDataArray.length > 0;
             const cleanedEmail = emailContent ? emailContent.replace(/<style[^>]*>.*<\/style>/gs, "").replace(/<[^>]+>/g, ' ').substring(0, 3000) : '';
-            const prompt = `Analyze this email${hasPdfs ? ' and its PDF attachment(s)' : ''}. Is it an expense? If NO, return {"is_expense": false}. If YES, extract: vendor, amount, currency (e.g. USD), date (YYYY-MM-DD), description, category (choose from: ${categories}). For the date: use the payment due date, charge date, or transaction date - NOT the statement/issue date. For example, if a bill says "as of 7 Apr" but "due on 21 Apr", use 2026-04-21. Return minified JSON.${cleanedEmail ? ` Email: --- ${cleanedEmail} ---` : ''}${hasPdfs ? ' PDF attachment(s) are provided below.' : ''}`;
+            const prompt = `Analyze this email${hasPdfs ? ' and its PDF attachment(s)' : ''}. Is it an expense? If NO, return {"is_expense": false}. If YES, extract: vendor, amount, currency (e.g. USD), date (YYYY-MM-DD), description, category (choose from: ${categories}). For the date: use the date the transaction actually happened.
+- For RECEIPTS (charge already completed — most subscription/payment confirmation emails): use the invoice/receipt/transaction/billing date. Do NOT use a "renews on", "next billing date", or "next charge" date — those refer to a FUTURE charge that has not happened yet.
+- For BILLS / invoices not yet paid: use the payment due date, not the statement/issue date.
+- Examples:
+  - "Invoice 26 March 2026 ... Renews 27 April 2026" -> use 2026-03-26 (the invoice was issued/paid on 26 March; 27 April is just the next renewal).
+  - Bill says "as of 7 Apr" but "due on 21 Apr" -> use 2026-04-21 (future due date for an unpaid bill).
+  - "Order placed 15 Mar ... ships 18 Mar" -> use 2026-03-15 (the charge happened on the order date).
+Return minified JSON.${cleanedEmail ? ` Email: --- ${cleanedEmail} ---` : ''}${hasPdfs ? ' PDF attachment(s) are provided below.' : ''}`;
 
             try {
                 // SWITCH: Use Gemini API Key if available, else Vertex AI
