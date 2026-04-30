@@ -1091,7 +1091,13 @@
             const categories = "Telco, Utilities, Transport, Unclassified, Insurance, Pets, Groceries, Wedding, Renovation, Hardware, Household, Holidays, Eating out, Services, Clothes, Taxes, Gifts, Education, Leisure, Health & Personal Care";
             const prompt = `You are analyzing a bank or credit card statement PDF. Extract ALL individual transaction line items that are charges/expenses (NOT payments, credits, or refunds).
 
-For each transaction extract: date (YYYY-MM-DD), vendor (merchant name), description (brief), amount (positive number), currency (ISO code e.g. SGD, USD), category (choose from: ${categories}).
+For each transaction extract:
+- date (YYYY-MM-DD): the transaction/charge date, NOT the posting/statement date.
+- vendor: the merchant or business name. Strip any markdown link syntax — e.g. "[Apple.com](http://Apple.com)" must become "Apple.com". Do NOT use a long numeric transaction reference (like "SINGAPOR6182475543672" or "812881068") as the vendor — those are payment IDs. Look at the line(s) immediately above/below for the real merchant; FX transactions often split the merchant name across continuation lines. If the merchant is genuinely unknown, infer a sensible label from context (e.g. "Airline/Travel" if the surrounding text mentions an airline or travel category).
+- description: a brief, human-readable description. Skip bare transaction reference numbers and city-only strings ("Singapore", "London") unless that is genuinely all the statement shows.
+- amount: positive number. For FOREIGN-CURRENCY transactions the statement shows BOTH the foreign amount and the SGD/local-equivalent — return the FOREIGN amount, not the converted one.
+- currency: ISO code (e.g. SGD, USD, NZD, AUD, EUR). For foreign-currency transactions use the FOREIGN currency, not the statement's home currency. Look for explicit ISO codes on continuation lines or in a dedicated FX column.
+- category: choose from: ${categories}.
 
 Also identify the card number's last 4 digits from the statement header/summary.
 
@@ -1101,7 +1107,10 @@ Rules:
 - Only include expense/charge transactions (positive amounts billed to the customer)
 - Skip payments, credits, refunds, interest charges, fees, and balance entries
 - Use the actual transaction date, not the posting date or statement date
-- If the currency is not explicit per transaction, use the statement's default currency
+- FX transactions: ALWAYS prefer the foreign amount + foreign currency over the home-currency equivalent. If you cannot identify a foreign currency for a row, fall back to the statement's home currency.
+- If a transaction spans multiple visual lines (common for FX or long merchant names), combine them — the merchant name and currency may be on a continuation line
+- Strip markdown formatting from vendor names (e.g. "[X](http://X)" -> "X")
+- Expand obvious truncations when context makes them clear (e.g. "Sagye Korean Restauran" -> "Sagye Korean Restaurant")
 - Return minified JSON only, no explanations`;
 
             try {
