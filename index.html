@@ -340,6 +340,12 @@
 
         // --- CARD TAG MAPPING ---
         function renderCardMappings() {
+            const typed = {};
+            cardMappingsList.querySelectorAll('input[id^="detected-tag-"]').forEach(inp => {
+                const key = inp.id.replace(/^detected-tag-/, '');
+                if (inp.value) typed[key] = inp.value;
+            });
+
             cardMappingsList.innerHTML = '';
             const pending = [...detectedUnmappedCards].filter(c => !cardTagMappings.find(m => m.cardLastFour === c));
 
@@ -374,6 +380,7 @@
                 cardMappingsList.appendChild(row);
                 const input = row.querySelector(`#detected-tag-${c}`);
                 if (input) {
+                    if (typed[c]) input.value = typed[c];
                     input.addEventListener('keydown', (ev) => {
                         if (ev.key === 'Enter') { ev.preventDefault(); saveDetectedCardMapping(c); }
                     });
