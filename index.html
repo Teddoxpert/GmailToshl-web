@@ -1147,8 +1147,15 @@
                                         }
                                     }
                                     if (norm.vendor && norm.amount) {
-                                        // Update State & Render Immediately
-                                        pendingReceipts.unshift({ ...norm, id: msg.id, source: 'email', emailNumber: i + idx + 1, totalEmails: allMessages.length, logIndex: geminiLogs.length - 1 });
+                                        const cleanedEmailForTooltip = (content || '')
+                                            .replace(/<style[\s\S]*?<\/style>/gi, '')
+                                            .replace(/<script[\s\S]*?<\/script>/gi, '')
+                                            .replace(/<[^>]+>/g, ' ')
+                                            .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+                                            .replace(/\s+/g, ' ')
+                                            .trim()
+                                            .substring(0, 2000);
+                                        pendingReceipts.unshift({ ...norm, id: msg.id, source: 'email', emailNumber: i + idx + 1, totalEmails: allMessages.length, logIndex: geminiLogs.length - 1, emailText: cleanedEmailForTooltip, emailSnippet: res.result.snippet || '' });
                                         processedMessageIds.add(msg.id);
                                         renderReviewQueue(); // STREAMING RESTORED
                                     }
@@ -1621,7 +1628,9 @@ IMPORTANT: Return ONLY the JSON array, no code, no explanations.`;
                         duplicateOf: stmtItem.duplicateOf || emailItem.duplicateOf || null,
                         emailNumber: emailItem.emailNumber,
                         totalEmails: emailItem.totalEmails,
-                        logIndex: emailItem.logIndex
+                        logIndex: emailItem.logIndex,
+                        emailText: emailItem.emailText || '',
+                        emailSnippet: emailItem.emailSnippet || ''
                     };
 
                     pendingReceipts = pendingReceipts.filter(r => r.id !== pair.statementId && r.id !== pair.emailId);
@@ -1753,11 +1762,17 @@ IMPORTANT: Return ONLY the JSON array, no code, no explanations.`;
                 }
 
                 const cardSuffix = receipt.cardLastFour ? ` <span class="font-mono text-gray-400 dark:text-gray-500">****${receipt.cardLastFour}</span>` : '';
-                const sourceLabel = isStatement
-                    ? `<span class="text-xs text-purple-500">Statement${cardSuffix}</span>`
-                    : isCombined
-                        ? `<a href="#" onclick="jumpToLog(${receipt.logIndex}); return false;" class="text-xs text-blue-500 hover:underline ml-2">Email ${receipt.emailNumber}/${receipt.totalEmails}${cardSuffix}</a>`
-                        : `<a href="#" onclick="jumpToLog(${receipt.logIndex}); return false;" class="text-xs text-blue-500 hover:underline ml-2">Email ${receipt.emailNumber}/${receipt.totalEmails}</a>`;
+                let sourceLabel;
+                if (isStatement) {
+                    sourceLabel = `<span class="text-xs text-purple-500">Statement${cardSuffix}</span>`;
+                } else {
+                    const emailText = receipt.emailText || receipt.emailSnippet || '';
+                    const emailTooltip = emailText
+                        ? `<div class="dup-tooltip pointer-events-none opacity-0 group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150 absolute z-30 right-0 top-full mt-1 w-80 max-h-64 overflow-y-auto bg-gray-900 dark:bg-gray-950 border border-gray-700 rounded-lg p-3 text-xs text-gray-100 shadow-xl"><div class="text-blue-300 font-bold mb-1 flex items-center"><i class="fas fa-envelope mr-1"></i> Email content</div><div class="text-gray-200 whitespace-pre-wrap break-words">${escapeHtml(emailText)}</div><div class="text-[10px] text-gray-500 mt-2">Click to jump to the full Gemini log.</div></div>`
+                        : '';
+                    const labelText = isCombined ? `Email ${receipt.emailNumber}/${receipt.totalEmails}${cardSuffix}` : `Email ${receipt.emailNumber}/${receipt.totalEmails}`;
+                    sourceLabel = `<span class="relative group inline-block ml-2"><a href="#" onclick="jumpToLog(${receipt.logIndex}); return false;" class="text-xs text-blue-500 hover:underline">${labelText}</a>${emailTooltip}</span>`;
+                }
 
                 const statementRef = isCombined && receipt.statementRef
                     ? `<p class="text-xs text-gray-400 dark:text-gray-500 italic mt-1">Statement: ${receipt.statementRef}</p>`
