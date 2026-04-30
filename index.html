@@ -723,14 +723,16 @@
             const hasFiles = statementFileInput.files && statementFileInput.files.length > 0;
             const hasGemini = (GEMINI_API_KEY && GEMINI_API_KEY.length > 10) || (isGoogleConnected && GOOGLE_CLOUD_PROJECT_ID);
             const hasToshl = TOSH_API_TOKEN && TOSH_API_TOKEN.length > 5 && CORS_PROXY_URL;
-            if (hasFiles && hasGemini && hasToshl) {
+            if (hasGemini && hasToshl) {
                 analyzeStatementsBtn.disabled = false;
                 statementHelperText.style.display = 'none';
                 analyzeStatementsBtn.className = 'w-full bg-purple-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-purple-700 transition duration-300 flex items-center justify-center cursor-pointer';
+                analyzeBtnText.textContent = hasFiles ? 'Analyze Statements' : 'Choose PDF Statements';
             } else {
                 analyzeStatementsBtn.disabled = true;
                 statementHelperText.style.display = 'block';
                 analyzeStatementsBtn.className = 'w-full bg-gray-400 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center cursor-not-allowed';
+                analyzeBtnText.textContent = 'Analyze Statements';
             }
         }
 
@@ -884,7 +886,14 @@
         scanGmailBtn.addEventListener('click', scanGmail);
 
         statementFileInput.addEventListener('change', updateStatementBtnState);
-        analyzeStatementsBtn.addEventListener('click', processStatements);
+        analyzeStatementsBtn.addEventListener('click', () => {
+            const hasFiles = statementFileInput.files && statementFileInput.files.length > 0;
+            if (!hasFiles) {
+                statementFileInput.click();
+                return;
+            }
+            processStatements();
+        });
 
         // --- CORE LOGIC ---
         
@@ -1015,11 +1024,11 @@
                 const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
 
                 if (GEMINI_API_KEY) {
-                    apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+                    apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
                     headers = { 'Content-Type': 'application/json' };
                 } else {
                     const location = 'us-central1';
-                    const model = 'gemini-2.5-flash';
+                    const model = 'gemini-flash-latest';
                     apiUrl = `https://us-central1-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_ID}/locations/${location}/publishers/google/models/${model}:generateContent`;
                     headers = { 
                         'Content-Type': 'application/json',
@@ -1282,11 +1291,11 @@ Return minified JSON.${cleanedEmail ? ` Email: --- ${cleanedEmail} ---` : ''}${h
                 const payload = { contents: [{ role: "user", parts }] };
 
                 if (GEMINI_API_KEY) {
-                    apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+                    apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
                     headers = { 'Content-Type': 'application/json' };
                 } else {
                     const location = 'us-central1';
-                    const model = 'gemini-2.5-flash';
+                    const model = 'gemini-flash-latest';
                     apiUrl = `https://us-central1-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_ID}/locations/${location}/publishers/google/models/${model}:generateContent`;
                     headers = { 
                         'Content-Type': 'application/json',
@@ -1379,11 +1388,11 @@ Rules:
                 const payload = { contents: [{ role: "user", parts }] };
 
                 if (GEMINI_API_KEY) {
-                    apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+                    apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
                     headers = { 'Content-Type': 'application/json' };
                 } else {
                     const location = 'us-central1';
-                    const model = 'gemini-2.5-flash';
+                    const model = 'gemini-flash-latest';
                     apiUrl = `https://us-central1-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_ID}/locations/${location}/publishers/google/models/${model}:generateContent`;
                     headers = {
                         'Content-Type': 'application/json',
@@ -1574,11 +1583,11 @@ IMPORTANT: Return ONLY the JSON array, no code, no explanations.`;
                 const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
 
                 if (GEMINI_API_KEY) {
-                    apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+                    apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
                     headers = { 'Content-Type': 'application/json' };
                 } else {
                     const location = 'us-central1';
-                    const model = 'gemini-2.5-flash';
+                    const model = 'gemini-flash-latest';
                     apiUrl = `https://us-central1-aiplatform.googleapis.com/v1/projects/${GOOGLE_CLOUD_PROJECT_ID}/locations/${location}/publishers/google/models/${model}:generateContent`;
                     headers = {
                         'Content-Type': 'application/json',
