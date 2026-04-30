@@ -138,9 +138,11 @@
                     <div id="card-mappings-list" class="space-y-2 mb-3"></div>
                     <div class="flex space-x-2">
                         <input type="text" id="card-last4-input" placeholder="Last 4" maxlength="4" class="w-20 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
-                        <input type="text" id="card-tag-input" placeholder="Tag name" class="flex-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                        <input type="text" id="card-tag-input" list="toshl-tags-list" placeholder="Tag name" class="flex-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                        <datalist id="toshl-tags-list"></datalist>
                         <button id="add-card-mapping-btn" class="bg-blue-500 text-white font-bold px-3 py-2 rounded-lg hover:bg-blue-600 transition text-sm"><i class="fas fa-plus"></i></button>
                     </div>
+                    <p id="toshl-tags-status" class="text-xs text-gray-400 dark:text-gray-500 mt-2">Connect Toshl to see existing tags.</p>
                 </div>
 
                 <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md">
@@ -169,6 +171,10 @@
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">PDF Statements</label>
                             <input type="file" id="statement-file-input" accept=".pdf" multiple class="block w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 dark:file:bg-indigo-900 dark:file:text-indigo-200 hover:file:bg-indigo-100 dark:hover:file:bg-indigo-800">
+                        </div>
+                        <div class="flex items-center">
+                            <input type="checkbox" id="auto-scan-emails-checkbox" checked class="mr-2 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                            <label for="auto-scan-emails-checkbox" class="text-xs text-gray-600 dark:text-gray-300">Auto-scan emails for the statement period and consolidate</label>
                         </div>
                         <button id="analyze-statements-btn" class="w-full bg-gray-400 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center cursor-not-allowed" disabled>
                             <i class="fas fa-file-pdf mr-2"></i>
@@ -247,6 +253,7 @@
         let currentLogIndex = -1;
         let cardTagMappings = [];
         try { cardTagMappings = JSON.parse(localStorage.getItem('card_tag_mappings') || '[]'); } catch(e) {}
+        let toshlTagsCache = [];
 
         // --- DOM ELEMENTS ---
         const googleStatusDot = document.getElementById('google-status-dot');
@@ -306,6 +313,7 @@
 
         const statementFileInput = document.getElementById('statement-file-input');
         const analyzeStatementsBtn = document.getElementById('analyze-statements-btn');
+        const autoScanEmailsCheckbox = document.getElementById('auto-scan-emails-checkbox');
         const analyzeBtnText = document.getElementById('analyze-btn-text');
         const statementHelperText = document.getElementById('statement-helper-text');
 
@@ -359,6 +367,46 @@
         });
 
         renderCardMappings();
+
+        async function fetchToshlTags() {
+            const statusEl = document.getElementById('toshl-tags-status');
+            if (!TOSH_API_TOKEN || !CORS_PROXY_URL) {
+                toshlTagsCache = [];
+                renderToshlTagsDatalist();
+                if (statusEl) statusEl.textContent = 'Connect Toshl + CORS proxy to see existing tags.';
+                return;
+            }
+            try {
+                if (statusEl) statusEl.textContent = 'Loading Toshl tags...';
+                const url = CORS_PROXY_URL + encodeURIComponent('https://api.toshl.com/tags?per_page=500');
+                const res = await fetch(url, { headers: { 'Authorization': `Bearer ${TOSH_API_TOKEN}` } });
+                if (!res.ok) {
+                    if (statusEl) statusEl.textContent = `Tag fetch failed (HTTP ${res.status}).`;
+                    return;
+                }
+                const tags = await res.json();
+                toshlTagsCache = Array.isArray(tags) ? tags : [];
+                renderToshlTagsDatalist();
+                if (statusEl) statusEl.textContent = `${toshlTagsCache.length} Toshl tag(s) available — start typing to autocomplete.`;
+            } catch (e) {
+                console.error('fetchToshlTags failed:', e);
+                if (statusEl) statusEl.textContent = `Tag fetch error: ${e.message}`;
+            }
+        }
+
+        function renderToshlTagsDatalist() {
+            const datalist = document.getElementById('toshl-tags-list');
+            if (!datalist) return;
+            datalist.innerHTML = '';
+            const seen = new Set();
+            toshlTagsCache.forEach(t => {
+                if (!t || !t.name || seen.has(t.name)) return;
+                seen.add(t.name);
+                const opt = document.createElement('option');
+                opt.value = t.name;
+                datalist.appendChild(opt);
+            });
+        }
 
         function logActivity(message, type = 'success', id = null, logIndex = -1) {
             if (id) {
@@ -599,6 +647,7 @@
                 try { localStorage.setItem('toshl_api_token', val); } catch(e){}
                 updateUIState();
                 logActivity('Toshl API Token saved.', 'success');
+                fetchToshlTags();
             }
         });
 
@@ -608,6 +657,10 @@
             toshlTokenInput.value = '';
             updateUIState();
             logActivity('Disconnected from Toshl.', 'success');
+            toshlTagsCache = [];
+            renderToshlTagsDatalist();
+            const statusEl = document.getElementById('toshl-tags-status');
+            if (statusEl) statusEl.textContent = 'Connect Toshl to see existing tags.';
         });
 
         saveGeminiBtn.addEventListener('click', () => {
@@ -791,15 +844,19 @@
             }
         }
 
-        async function scanGmail() {
+        async function scanGmail(options = {}) {
+            const startDate = options.startDate || startDateInput.value;
+            const endDate = options.endDate || endDateInput.value;
+            const preservePending = !!options.preservePending;
+
             scanGmailBtn.disabled = true;
             scanBtnText.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>Scanning...`;
-            geminiLogs = []; currentLogIndex = -1; renderGeminiLog();
-            logActivity('Searching recent emails...', 'success', 'scan-status');
+            if (!preservePending) {
+                geminiLogs = []; currentLogIndex = -1; renderGeminiLog();
+            }
+            logActivity(`Searching emails ${startDate} to ${endDate}...`, 'success', 'scan-status');
 
             try {
-                const startDate = startDateInput.value;
-                const endDate = endDateInput.value;
                 let dateQuery = `after:${startDate} before:${endDate}`;
 
                 let allMessages = [];
@@ -813,8 +870,10 @@
                 } while (nextPageToken);
 
                 logActivity(`Found ${allMessages.length} emails. Analysis started...`, 'success', 'scan-status');
-                
-                pendingReceipts = [];
+
+                if (!preservePending) {
+                    pendingReceipts = [];
+                }
                 let scannedCount = 0;
 
                 // Process in batches of 10, 4s delay (Gemini Tier 1: 150 RPM, Gmail: 250 quota units/s)
@@ -1105,6 +1164,7 @@ Rules:
                 logActivity(`Read ${pdfDataArray.length} PDF file(s). Sending to Gemini...`, 'success', 'stmt-status');
 
                 let allTransactions = [];
+                const detectedCards = new Set();
 
                 for (let i = 0; i < pdfDataArray.length; i++) {
                     const pdf = pdfDataArray[i];
@@ -1115,6 +1175,8 @@ Rules:
                         const tagMapping = data.card_last_four
                             ? cardTagMappings.find(m => m.cardLastFour === data.card_last_four)
                             : null;
+
+                        if (data.card_last_four) detectedCards.add(data.card_last_four);
 
                         data.transactions.forEach((tx, idx) => {
                             allTransactions.push({
@@ -1136,29 +1198,45 @@ Rules:
                     if (i + 1 < pdfDataArray.length) await new Promise(r => setTimeout(r, 2000));
                 }
 
+                const unmappedCards = [...detectedCards].filter(c => !cardTagMappings.find(m => m.cardLastFour === c));
+                if (unmappedCards.length > 0) {
+                    logActivity(`Unmapped card(s): ${unmappedCards.map(c => `****${c}`).join(', ')}. Add a Card → Tag mapping to auto-tag future uploads.`, 'success');
+                    if (!cardLast4Input.value && unmappedCards.length === 1) {
+                        cardLast4Input.value = unmappedCards[0];
+                        cardTagInput.focus();
+                    }
+                }
+
                 if (allTransactions.length === 0) {
                     logActivity('No transactions found in any statement.', 'error');
                     return;
                 }
 
-                logActivity(`Total: ${allTransactions.length} transactions. Checking duplicates...`, 'success', 'stmt-status');
+                allTransactions.forEach(tx => pendingReceipts.unshift(tx));
+                renderReviewQueue();
 
                 const allDates = allTransactions.map(t => t.date).filter(Boolean).sort();
-                const bufferFrom = new Date(new Date(allDates[0]).getTime() - 7 * 86400000).toISOString().split('T')[0];
-                const bufferTo = new Date(new Date(allDates[allDates.length - 1]).getTime() + 7 * 86400000).toISOString().split('T')[0];
+                const stmtFrom = allDates[0];
+                const stmtTo = allDates[allDates.length - 1];
 
-                const existing = await getExistingToshlEntries(bufferFrom, bufferTo);
-                const duplicateIds = await detectDuplicatesBatch(allTransactions, existing);
+                const hasGeminiAccess = (GEMINI_API_KEY && GEMINI_API_KEY.length > 10) || (isGoogleConnected && GOOGLE_CLOUD_PROJECT_ID);
+                const autoScan = autoScanEmailsCheckbox.checked && isGoogleConnected && hasGeminiAccess;
 
-                allTransactions.forEach(tx => {
-                    tx.isDuplicate = duplicateIds.includes(tx.id);
-                    pendingReceipts.unshift(tx);
-                });
-
-                renderReviewQueue();
-                logActivity(`Statement analysis complete. ${allTransactions.length} transactions, ${duplicateIds.length} duplicates.`, 'success', 'stmt-status');
-
-                await crossReferenceReceipts();
+                if (autoScan) {
+                    logActivity(`Auto-scanning emails ${stmtFrom} to ${stmtTo} to consolidate with statement...`, 'success', 'stmt-status');
+                    await scanGmail({ startDate: stmtFrom, endDate: stmtTo, preservePending: true });
+                    logActivity(`Statement + email consolidation complete (${allTransactions.length} stmt transactions).`, 'success', 'stmt-status');
+                } else {
+                    logActivity(`Total: ${allTransactions.length} transactions. Checking duplicates against Toshl...`, 'success', 'stmt-status');
+                    const bufferFrom = new Date(new Date(stmtFrom).getTime() - 7 * 86400000).toISOString().split('T')[0];
+                    const bufferTo = new Date(new Date(stmtTo).getTime() + 7 * 86400000).toISOString().split('T')[0];
+                    const existing = await getExistingToshlEntries(bufferFrom, bufferTo);
+                    const duplicateIds = await detectDuplicatesBatch(allTransactions, existing);
+                    allTransactions.forEach(tx => { tx.isDuplicate = duplicateIds.includes(tx.id); });
+                    renderReviewQueue();
+                    logActivity(`Statement analysis complete. ${allTransactions.length} transactions, ${duplicateIds.length} duplicates.`, 'success', 'stmt-status');
+                    await crossReferenceReceipts();
+                }
 
             } catch (err) {
                 console.error(err);
@@ -1383,9 +1461,12 @@ IMPORTANT: Return ONLY the JSON array, no code, no explanations.`;
                     badges += `<span class="inline-block bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-200 text-xs px-2 py-1 rounded-full font-medium mb-2">${receipt.tag}</span>`;
                 }
 
+                const cardSuffix = receipt.cardLastFour ? ` <span class="font-mono text-gray-400 dark:text-gray-500">****${receipt.cardLastFour}</span>` : '';
                 const sourceLabel = isStatement
-                    ? `<span class="text-xs text-purple-500">Statement</span>`
-                    : `<a href="#" onclick="jumpToLog(${receipt.logIndex}); return false;" class="text-xs text-blue-500 hover:underline ml-2">Email ${receipt.emailNumber}/${receipt.totalEmails}</a>`;
+                    ? `<span class="text-xs text-purple-500">Statement${cardSuffix}</span>`
+                    : isCombined
+                        ? `<a href="#" onclick="jumpToLog(${receipt.logIndex}); return false;" class="text-xs text-blue-500 hover:underline ml-2">Email ${receipt.emailNumber}/${receipt.totalEmails}${cardSuffix}</a>`
+                        : `<a href="#" onclick="jumpToLog(${receipt.logIndex}); return false;" class="text-xs text-blue-500 hover:underline ml-2">Email ${receipt.emailNumber}/${receipt.totalEmails}</a>`;
 
                 const statementRef = isCombined && receipt.statementRef
                     ? `<p class="text-xs text-gray-400 dark:text-gray-500 italic mt-1">Statement: ${receipt.statementRef}</p>`
@@ -1511,6 +1592,8 @@ IMPORTANT: Return ONLY the JSON array, no code, no explanations.`;
         const past = new Date(); past.setDate(today.getDate() - 90);
         endDateInput.value = today.toISOString().split('T')[0];
         startDateInput.value = past.toISOString().split('T')[0];
+
+        if (TOSH_API_TOKEN && CORS_PROXY_URL) fetchToshlTags();
         
         // --- DARK MODE ---
         const darkToggle = document.getElementById('dark-mode-toggle');
