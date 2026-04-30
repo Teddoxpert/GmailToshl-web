@@ -254,6 +254,11 @@
         let cardTagMappings = [];
         try { cardTagMappings = JSON.parse(localStorage.getItem('card_tag_mappings') || '[]'); } catch(e) {}
         let toshlTagsCache = [];
+        let detectedUnmappedCards = new Set();
+        try {
+            const stored = JSON.parse(localStorage.getItem('detected_unmapped_cards') || '[]');
+            if (Array.isArray(stored)) stored.forEach(c => detectedUnmappedCards.add(c));
+        } catch(e) {}
 
         // --- DOM ELEMENTS ---
         const googleStatusDot = document.getElementById('google-status-dot');
@@ -331,17 +336,42 @@
         // --- CARD TAG MAPPING ---
         function renderCardMappings() {
             cardMappingsList.innerHTML = '';
-            if (cardTagMappings.length === 0) {
+            const pending = [...detectedUnmappedCards].filter(c => !cardTagMappings.find(m => m.cardLastFour === c));
+
+            if (cardTagMappings.length === 0 && pending.length === 0) {
                 cardMappingsList.innerHTML = '<p class="text-xs text-gray-400 dark:text-gray-500">No mappings yet.</p>';
                 return;
             }
+
             cardTagMappings.forEach(m => {
                 const row = document.createElement('div');
                 row.className = 'flex items-center justify-between bg-gray-50 dark:bg-gray-700 rounded-lg px-3 py-2 text-sm';
                 row.innerHTML = `<span><span class="font-mono font-bold">****${m.cardLastFour}</span> &rarr; <span class="text-indigo-600 dark:text-indigo-400 font-medium">${m.tagName}</span></span>
-                    <button onclick="removeCardMapping('${m.cardLastFour}')" class="text-red-400 hover:text-red-600 ml-2"><i class="fas fa-trash-alt text-xs"></i></button>`;
+                    <button onclick="removeCardMapping('${m.cardLastFour}')" class="text-red-400 hover:text-red-600 ml-2" title="Remove"><i class="fas fa-trash-alt text-xs"></i></button>`;
                 cardMappingsList.appendChild(row);
             });
+
+            pending.forEach(c => {
+                const row = document.createElement('div');
+                row.className = 'flex items-center bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-700 rounded-lg px-3 py-2 text-sm space-x-2';
+                row.innerHTML = `
+                    <span class="font-mono font-bold whitespace-nowrap">****${c}</span>
+                    <span class="text-xs text-yellow-700 dark:text-yellow-300 whitespace-nowrap">detected</span>
+                    <input type="text" id="detected-tag-${c}" list="toshl-tags-list" placeholder="Tag name" class="flex-1 min-w-0 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded p-1 text-xs focus:ring-2 focus:ring-blue-500 outline-none">
+                    <button onclick="saveDetectedCardMapping('${c}')" class="bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 transition text-xs whitespace-nowrap" title="Save mapping"><i class="fas fa-check"></i></button>
+                    <button onclick="dismissDetectedCard('${c}')" class="text-gray-400 hover:text-gray-600 px-1 text-xs" title="Dismiss"><i class="fas fa-times"></i></button>`;
+                cardMappingsList.appendChild(row);
+                const input = row.querySelector(`#detected-tag-${c}`);
+                if (input) {
+                    input.addEventListener('keydown', (ev) => {
+                        if (ev.key === 'Enter') { ev.preventDefault(); saveDetectedCardMapping(c); }
+                    });
+                }
+            });
+        }
+
+        function persistDetectedCards() {
+            try { localStorage.setItem('detected_unmapped_cards', JSON.stringify([...detectedUnmappedCards])); } catch(e) {}
         }
 
         function addCardMapping(last4, tagName) {
@@ -351,12 +381,31 @@
             cardTagMappings = cardTagMappings.filter(m => m.cardLastFour !== last4);
             cardTagMappings.push({ cardLastFour: last4, tagName: tagName.trim() });
             try { localStorage.setItem('card_tag_mappings', JSON.stringify(cardTagMappings)); } catch(e) {}
+            detectedUnmappedCards.delete(last4);
+            persistDetectedCards();
             renderCardMappings();
         }
 
         function removeCardMapping(last4) {
             cardTagMappings = cardTagMappings.filter(m => m.cardLastFour !== last4);
             try { localStorage.setItem('card_tag_mappings', JSON.stringify(cardTagMappings)); } catch(e) {}
+            renderCardMappings();
+        }
+
+        function saveDetectedCardMapping(last4) {
+            const input = document.getElementById(`detected-tag-${last4}`);
+            const tag = input && input.value.trim();
+            if (!tag) {
+                logActivity(`Enter a tag name for ****${last4} before saving.`, 'error');
+                if (input) input.focus();
+                return;
+            }
+            addCardMapping(last4, tag);
+        }
+
+        function dismissDetectedCard(last4) {
+            detectedUnmappedCards.delete(last4);
+            persistDetectedCards();
             renderCardMappings();
         }
 
@@ -1226,11 +1275,10 @@ Rules:
 
                 const unmappedCards = [...detectedCards].filter(c => !cardTagMappings.find(m => m.cardLastFour === c));
                 if (unmappedCards.length > 0) {
-                    logActivity(`Unmapped card(s): ${unmappedCards.map(c => `****${c}`).join(', ')}. Add a Card → Tag mapping to auto-tag future uploads.`, 'success');
-                    if (!cardLast4Input.value && unmappedCards.length === 1) {
-                        cardLast4Input.value = unmappedCards[0];
-                        cardTagInput.focus();
-                    }
+                    logActivity(`Unmapped card(s): ${unmappedCards.map(c => `****${c}`).join(', ')}. Assign tags in the Card → Tag Mappings panel.`, 'success');
+                    unmappedCards.forEach(c => detectedUnmappedCards.add(c));
+                    persistDetectedCards();
+                    renderCardMappings();
                 }
 
                 if (allTransactions.length === 0) {
