@@ -1098,10 +1098,11 @@ For each transaction extract:
 - amount: positive number. For FOREIGN-CURRENCY transactions the statement shows BOTH the foreign amount and the SGD/local-equivalent — return the FOREIGN amount, not the converted one.
 - currency: ISO code (e.g. SGD, USD, NZD, AUD, EUR). For foreign-currency transactions use the FOREIGN currency, not the statement's home currency. Look for explicit ISO codes on continuation lines or in a dedicated FX column.
 - category: choose from: ${categories}.
+- card_last_four: the last 4 digits of the card this transaction was charged to. A single statement may contain transactions for multiple cards (primary + supplementary cards on the same account). Look for section headers like "Card Number XXXX-XXXX-XXXX-1234", "Card ending in 1234", or per-cardholder sections, and tag every transaction with the card it belongs to. Every transaction MUST have a card_last_four — if the statement is for a single card, use that card's last 4 for all rows.
 
-Also identify the card number's last 4 digits from the statement header/summary.
+Also list every distinct card last-4 found anywhere in the statement in cards_in_statement.
 
-Return a JSON object: {"card_last_four": "7948", "transactions": [{"date": "2026-01-15", "vendor": "Starbucks", "description": "Coffee", "amount": 12.50, "currency": "SGD", "category": "Eating out"}, ...]}
+Return a JSON object: {"cards_in_statement": ["7948","2575"], "transactions": [{"date": "2026-01-15", "vendor": "Starbucks", "description": "Coffee", "amount": 12.50, "currency": "SGD", "category": "Eating out", "card_last_four": "7948"}, ...]}
 
 Rules:
 - Only include expense/charge transactions (positive amounts billed to the customer)
@@ -1111,6 +1112,7 @@ Rules:
 - If a transaction spans multiple visual lines (common for FX or long merchant names), combine them — the merchant name and currency may be on a continuation line
 - Strip markdown formatting from vendor names (e.g. "[X](http://X)" -> "X")
 - Expand obvious truncations when context makes them clear (e.g. "Sagye Korean Restauran" -> "Sagye Korean Restaurant")
+- Card attribution: when the statement groups transactions by cardholder/card, attribute each transaction to its section's card. Do not collapse multi-card statements onto a single card.
 - Return minified JSON only, no explanations`;
 
             try {
@@ -1181,25 +1183,40 @@ Rules:
                     const data = await extractStatementData([pdf]);
 
                     if (data && data.transactions && data.transactions.length > 0) {
-                        const tagMapping = data.card_last_four
-                            ? cardTagMappings.find(m => m.cardLastFour === data.card_last_four)
-                            : null;
-
-                        if (data.card_last_four) detectedCards.add(data.card_last_four);
+                        const cardsInPdf = new Set();
 
                         data.transactions.forEach((tx, idx) => {
+                            const txCard = (tx.card_last_four || data.card_last_four || '').toString().replace(/\D/g, '').slice(-4) || null;
+                            const tagMapping = txCard
+                                ? cardTagMappings.find(m => m.cardLastFour === txCard)
+                                : null;
+                            if (txCard) {
+                                cardsInPdf.add(txCard);
+                                detectedCards.add(txCard);
+                            }
                             allTransactions.push({
                                 ...tx,
                                 id: `stmt_${pdf.filename.replace(/[^a-zA-Z0-9]/g, '_')}_${idx}`,
                                 source: 'statement',
                                 tag: tagMapping ? tagMapping.tagName : null,
-                                cardLastFour: data.card_last_four || null,
+                                cardLastFour: txCard,
                                 emailNumber: idx + 1,
                                 totalEmails: data.transactions.length,
                                 logIndex: geminiLogs.length - 1
                             });
                         });
-                        logActivity(`${pdf.filename}: ${data.transactions.length} transactions found (card: ****${data.card_last_four || '????'})`, 'success');
+
+                        if (Array.isArray(data.cards_in_statement)) {
+                            data.cards_in_statement.forEach(c => {
+                                const cleaned = (c || '').toString().replace(/\D/g, '').slice(-4);
+                                if (cleaned) { cardsInPdf.add(cleaned); detectedCards.add(cleaned); }
+                            });
+                        }
+
+                        const cardLabel = cardsInPdf.size > 0
+                            ? [...cardsInPdf].map(c => `****${c}`).join(', ')
+                            : '****????';
+                        logActivity(`${pdf.filename}: ${data.transactions.length} transactions found (${cardsInPdf.size > 1 ? 'cards' : 'card'}: ${cardLabel})`, 'success');
                     } else {
                         logActivity(`${pdf.filename}: No transactions extracted.`, 'error');
                     }
