@@ -143,6 +143,11 @@
                         <button id="add-card-mapping-btn" class="bg-blue-500 text-white font-bold px-3 py-2 rounded-lg hover:bg-blue-600 transition text-sm"><i class="fas fa-plus"></i></button>
                     </div>
                     <p id="toshl-tags-status" class="text-xs text-gray-400 dark:text-gray-500 mt-2">Connect Toshl to see existing tags.</p>
+                    <div class="flex items-center justify-end space-x-3 text-xs mt-2">
+                        <button id="export-mappings-btn" class="text-indigo-500 hover:text-indigo-400 dark:text-indigo-400 dark:hover:text-indigo-300" title="Download mappings as JSON"><i class="fas fa-download mr-1"></i>Export</button>
+                        <button id="import-mappings-btn" class="text-indigo-500 hover:text-indigo-400 dark:text-indigo-400 dark:hover:text-indigo-300" title="Load mappings from JSON file"><i class="fas fa-upload mr-1"></i>Import</button>
+                        <input type="file" id="import-mappings-input" accept=".json,application/json" class="hidden">
+                    </div>
                 </div>
 
                 <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md">
@@ -335,6 +340,12 @@
 
         // --- CARD TAG MAPPING ---
         function renderCardMappings() {
+            const typed = {};
+            cardMappingsList.querySelectorAll('input[id^="detected-tag-"]').forEach(inp => {
+                const key = inp.id.replace(/^detected-tag-/, '');
+                if (inp.value) typed[key] = inp.value;
+            });
+
             cardMappingsList.innerHTML = '';
             const pending = [...detectedUnmappedCards].filter(c => !cardTagMappings.find(m => m.cardLastFour === c));
 
@@ -369,6 +380,7 @@
                 cardMappingsList.appendChild(row);
                 const input = row.querySelector(`#detected-tag-${c}`);
                 if (input) {
+                    if (typed[c]) input.value = typed[c];
                     input.addEventListener('keydown', (ev) => {
                         if (ev.key === 'Enter') { ev.preventDefault(); saveDetectedCardMapping(c); }
                     });
@@ -384,11 +396,25 @@
             if (!last4 || !tagName) return;
             last4 = last4.replace(/\D/g, '').slice(-4);
             if (last4.length < 4) { showModal('Error', 'Card number must be 4 digits.'); return; }
+            const cleanTag = tagName.trim();
             cardTagMappings = cardTagMappings.filter(m => m.cardLastFour !== last4);
-            cardTagMappings.push({ cardLastFour: last4, tagName: tagName.trim() });
+            cardTagMappings.push({ cardLastFour: last4, tagName: cleanTag });
             try { localStorage.setItem('card_tag_mappings', JSON.stringify(cardTagMappings)); } catch(e) {}
             detectedUnmappedCards.delete(last4);
             persistDetectedCards();
+
+            let updated = 0;
+            pendingReceipts.forEach(r => {
+                if (r.cardLastFour === last4 && r.tag !== cleanTag) {
+                    r.tag = cleanTag;
+                    updated++;
+                }
+            });
+            if (updated > 0) {
+                renderReviewQueue();
+                logActivity(`Tag "${cleanTag}" applied to ${updated} pending receipt(s) on ****${last4}.`, 'success');
+            }
+
             renderCardMappings();
         }
 
@@ -419,6 +445,67 @@
             addCardMapping(cardLast4Input.value, cardTagInput.value);
             cardLast4Input.value = '';
             cardTagInput.value = '';
+        });
+
+        const exportMappingsBtn = document.getElementById('export-mappings-btn');
+        const importMappingsBtn = document.getElementById('import-mappings-btn');
+        const importMappingsInput = document.getElementById('import-mappings-input');
+
+        exportMappingsBtn.addEventListener('click', () => {
+            if (cardTagMappings.length === 0) {
+                showModal('Export', 'No mappings to export yet.');
+                return;
+            }
+            const blob = new Blob([JSON.stringify(cardTagMappings, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `card-tag-mappings-${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            logActivity(`Exported ${cardTagMappings.length} card mapping(s).`, 'success');
+        });
+
+        importMappingsBtn.addEventListener('click', () => importMappingsInput.click());
+
+        importMappingsInput.addEventListener('change', async (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+            try {
+                const text = await file.text();
+                const parsed = JSON.parse(text);
+                if (!Array.isArray(parsed)) throw new Error('Expected a JSON array of {cardLastFour, tagName} objects.');
+                let added = 0, skipped = 0;
+                for (const item of parsed) {
+                    if (!item || typeof item !== 'object') { skipped++; continue; }
+                    const last4 = (item.cardLastFour || item.card_last_four || '').toString().replace(/\D/g, '').slice(-4);
+                    const tagName = (item.tagName || item.tag_name || '').toString().trim();
+                    if (last4.length !== 4 || !tagName) { skipped++; continue; }
+                    cardTagMappings = cardTagMappings.filter(m => m.cardLastFour !== last4);
+                    cardTagMappings.push({ cardLastFour: last4, tagName });
+                    detectedUnmappedCards.delete(last4);
+                    added++;
+                }
+                try { localStorage.setItem('card_tag_mappings', JSON.stringify(cardTagMappings)); } catch(_) {}
+                persistDetectedCards();
+                renderCardMappings();
+
+                let receiptsUpdated = 0;
+                pendingReceipts.forEach(r => {
+                    const m = cardTagMappings.find(m => m.cardLastFour === r.cardLastFour);
+                    if (m && r.tag !== m.tagName) { r.tag = m.tagName; receiptsUpdated++; }
+                });
+                if (receiptsUpdated > 0) renderReviewQueue();
+
+                logActivity(`Imported ${added} mapping(s)${skipped ? `, skipped ${skipped} invalid` : ''}${receiptsUpdated ? `, applied to ${receiptsUpdated} pending receipt(s)` : ''}.`, 'success');
+            } catch (err) {
+                logActivity(`Import failed: ${err.message}`, 'error');
+                showModal('Import error', err.message);
+            } finally {
+                importMappingsInput.value = '';
+            }
         });
 
         renderCardMappings();
