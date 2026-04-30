@@ -868,6 +868,40 @@
             }
         }
 
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        function findToshlMatch(receipt, entries) {
+            if (!entries || !entries.length) return null;
+            const rDate = receipt.date ? new Date(receipt.date) : null;
+            const rAmt = parseFloat(receipt.amount);
+            const rCurr = (receipt.currency || '').toUpperCase();
+            if (!rDate || isNaN(rAmt)) return null;
+
+            let best = null;
+            let bestDayDiff = Infinity;
+            for (const e of entries) {
+                const eAmt = Math.abs(parseFloat(e.amount));
+                const eCurr = ((e.currency && e.currency.code) || '').toUpperCase();
+                if (eCurr && rCurr && eCurr !== rCurr) continue;
+                if (Math.abs(eAmt - Math.abs(rAmt)) > 0.01) continue;
+                const eDate = e.date ? new Date(e.date) : null;
+                if (!eDate) continue;
+                const dayDiff = Math.abs((eDate - rDate) / 86400000);
+                if (dayDiff > 7) continue;
+                if (dayDiff < bestDayDiff) { bestDayDiff = dayDiff; best = e; }
+            }
+            if (!best) return null;
+            return {
+                id: best.id,
+                date: (best.date || '').toString().split('T')[0],
+                amount: Math.abs(parseFloat(best.amount)).toFixed(2),
+                currency: (best.currency && best.currency.code) || '',
+                desc: (best.desc || '').toString()
+            };
+        }
+
         async function detectDuplicatesBatch(newReceipts, existingEntries) {
             if (!newReceipts.length || !existingEntries.length) {
                 logActivity(`Duplicate skip: ${newReceipts.length} receipts vs ${existingEntries.length} existing. Need both > 0.`, 'error');
@@ -1085,7 +1119,10 @@
                     const duplicateIds = await detectDuplicatesBatch(pendingReceipts, existing);
                     
                     // Update flags
-                    pendingReceipts = pendingReceipts.map(r => ({ ...r, isDuplicate: duplicateIds.includes(r.id) }));
+                    pendingReceipts = pendingReceipts.map(r => {
+                        const isDup = duplicateIds.includes(r.id);
+                        return { ...r, isDuplicate: isDup, duplicateOf: isDup ? findToshlMatch(r, existing) : null };
+                    });
                     
                     // Final Render with Duplicate Warnings
                     renderReviewQueue();
@@ -1402,7 +1439,10 @@ Rules:
                     const bufferTo = new Date(new Date(stmtTo).getTime() + 7 * 86400000).toISOString().split('T')[0];
                     const existing = await getExistingToshlEntries(bufferFrom, bufferTo);
                     const duplicateIds = await detectDuplicatesBatch(allTransactions, existing);
-                    allTransactions.forEach(tx => { tx.isDuplicate = duplicateIds.includes(tx.id); });
+                    allTransactions.forEach(tx => {
+                        tx.isDuplicate = duplicateIds.includes(tx.id);
+                        tx.duplicateOf = tx.isDuplicate ? findToshlMatch(tx, existing) : null;
+                    });
                     renderReviewQueue();
                     logActivity(`Statement analysis complete. ${allTransactions.length} transactions, ${duplicateIds.length} duplicates.`, 'success', 'stmt-status');
                     await crossReferenceReceipts();
@@ -1513,6 +1553,7 @@ IMPORTANT: Return ONLY the JSON array, no code, no explanations.`;
                         cardLastFour: stmtItem.cardLastFour || null,
                         statementRef: stmtItem.vendor,
                         isDuplicate: stmtItem.isDuplicate || emailItem.isDuplicate,
+                        duplicateOf: stmtItem.duplicateOf || emailItem.duplicateOf || null,
                         emailNumber: emailItem.emailNumber,
                         totalEmails: emailItem.totalEmails,
                         logIndex: emailItem.logIndex
@@ -1622,7 +1663,22 @@ IMPORTANT: Return ONLY the JSON array, no code, no explanations.`;
 
                 let badges = '';
                 if (receipt.isDuplicate) {
-                    badges += `<span class="inline-block bg-yellow-200 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200 text-xs px-2 py-1 rounded-full font-bold mb-2 mr-1"><i class="fas fa-exclamation-triangle mr-1"></i> Potential Duplicate</span>`;
+                    const dupOf = receipt.duplicateOf;
+                    const tooltipBody = dupOf
+                        ? `
+                            <div class="text-yellow-300 font-bold mb-1 flex items-center"><i class="fas fa-link mr-1"></i> Matches existing Toshl entry</div>
+                            <div class="grid grid-cols-[auto,1fr] gap-x-2 gap-y-0.5">
+                                <span class="text-gray-400">Date</span><span class="text-gray-100">${dupOf.date || ''}</span>
+                                <span class="text-gray-400">Amount</span><span class="text-gray-100 font-mono">${dupOf.amount || ''} ${dupOf.currency || ''}</span>
+                                ${dupOf.desc ? `<span class="text-gray-400">Desc</span><span class="text-gray-100">${escapeHtml(dupOf.desc)}</span>` : ''}
+                            </div>
+                            <div class="text-[10px] text-gray-500 mt-1">Toshl id: ${escapeHtml(dupOf.id || '')}</div>`
+                        : `<div class="text-yellow-300 font-bold mb-1"><i class="fas fa-link mr-1"></i> Flagged as potential duplicate</div>
+                           <div class="text-gray-300 text-[11px]">No exact Toshl match found by date+amount; Gemini flagged it based on vendor/desc similarity.</div>`;
+                    badges += `<span class="relative group inline-block mb-2 mr-1">
+                        <span class="bg-yellow-200 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200 text-xs px-2 py-1 rounded-full font-bold cursor-help inline-block"><i class="fas fa-exclamation-triangle mr-1"></i> Potential Duplicate</span>
+                        <div class="dup-tooltip pointer-events-none opacity-0 group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150 absolute z-30 left-0 top-full mt-1 w-72 bg-gray-900 dark:bg-gray-950 border border-gray-700 rounded-lg p-3 text-xs text-white shadow-xl">${tooltipBody}</div>
+                    </span>`;
                 }
                 if (isCombined) {
                     badges += `<span class="inline-block bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-200 text-xs px-2 py-1 rounded-full font-bold mb-2 mr-1"><i class="fas fa-link mr-1"></i> Verified (Statement + Email)</span>`;
