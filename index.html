@@ -144,8 +144,8 @@
                     </div>
                     <p id="toshl-tags-status" class="text-xs text-gray-400 dark:text-gray-500 mt-2">Connect Toshl to see existing tags.</p>
                     <div class="flex items-center justify-end space-x-3 text-xs mt-2">
-                        <button id="export-mappings-btn" class="text-indigo-500 hover:text-indigo-400 dark:text-indigo-400 dark:hover:text-indigo-300" title="Download mappings as JSON"><i class="fas fa-download mr-1"></i>Export</button>
-                        <button id="import-mappings-btn" class="text-indigo-500 hover:text-indigo-400 dark:text-indigo-400 dark:hover:text-indigo-300" title="Load mappings from JSON file"><i class="fas fa-upload mr-1"></i>Import</button>
+                        <button id="export-mappings-btn" class="text-indigo-500 hover:text-indigo-400 dark:text-indigo-400 dark:hover:text-indigo-300" title="Download mappings + connection settings (incl. API tokens) as JSON"><i class="fas fa-download mr-1"></i>Export</button>
+                        <button id="import-mappings-btn" class="text-indigo-500 hover:text-indigo-400 dark:text-indigo-400 dark:hover:text-indigo-300" title="Restore mappings + connection settings from JSON file"><i class="fas fa-upload mr-1"></i>Import</button>
                         <input type="file" id="import-mappings-input" accept=".json,application/json" class="hidden">
                     </div>
                 </div>
@@ -452,20 +452,35 @@
         const importMappingsInput = document.getElementById('import-mappings-input');
 
         exportMappingsBtn.addEventListener('click', () => {
-            if (cardTagMappings.length === 0) {
-                showModal('Export', 'No mappings to export yet.');
+            const settings = {
+                google_client_id: GOOGLE_CLIENT_ID || '',
+                google_cloud_project_id: GOOGLE_CLOUD_PROJECT_ID || '',
+                cors_proxy_url: CORS_PROXY_URL || '',
+                toshl_api_token: TOSH_API_TOKEN || '',
+                gemini_api_key: GEMINI_API_KEY || ''
+            };
+            const hasAnySetting = Object.values(settings).some(v => v);
+            if (cardTagMappings.length === 0 && !hasAnySetting) {
+                showModal('Export', 'Nothing to export yet (no mappings, no connection settings).');
                 return;
             }
-            const blob = new Blob([JSON.stringify(cardTagMappings, null, 2)], { type: 'application/json' });
+            const payload = {
+                version: 1,
+                exportedAt: new Date().toISOString(),
+                settings,
+                card_tag_mappings: cardTagMappings
+            };
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `card-tag-mappings-${new Date().toISOString().split('T')[0]}.json`;
+            a.download = `gmailtoshl-config-${new Date().toISOString().split('T')[0]}.json`;
             document.body.appendChild(a);
             a.click();
             a.remove();
             URL.revokeObjectURL(url);
-            logActivity(`Exported ${cardTagMappings.length} card mapping(s).`, 'success');
+            const settingCount = Object.values(settings).filter(v => v).length;
+            logActivity(`Exported ${cardTagMappings.length} mapping(s) + ${settingCount} setting(s). Keep this file private — it contains API tokens.`, 'success');
         });
 
         importMappingsBtn.addEventListener('click', () => importMappingsInput.click());
@@ -476,9 +491,42 @@
             try {
                 const text = await file.text();
                 const parsed = JSON.parse(text);
-                if (!Array.isArray(parsed)) throw new Error('Expected a JSON array of {cardLastFour, tagName} objects.');
+
+                let mappings = [];
+                let settings = {};
+                if (Array.isArray(parsed)) {
+                    mappings = parsed;
+                } else if (parsed && typeof parsed === 'object') {
+                    mappings = Array.isArray(parsed.card_tag_mappings) ? parsed.card_tag_mappings : [];
+                    settings = (parsed.settings && typeof parsed.settings === 'object') ? parsed.settings : {};
+                } else {
+                    throw new Error('Expected a JSON object or array.');
+                }
+
+                const settingMap = [
+                    ['google_client_id', 'GOOGLE_CLIENT_ID', gcidInput],
+                    ['google_cloud_project_id', 'GOOGLE_CLOUD_PROJECT_ID', gcpInput],
+                    ['cors_proxy_url', 'CORS_PROXY_URL', proxyInput],
+                    ['toshl_api_token', 'TOSH_API_TOKEN', toshlTokenInput],
+                    ['gemini_api_key', 'GEMINI_API_KEY', geminiKeyInput]
+                ];
+                let settingsApplied = 0;
+                for (const [key, varName, inputEl] of settingMap) {
+                    const v = settings[key];
+                    if (typeof v === 'string' && v.length > 0) {
+                        if (varName === 'GOOGLE_CLIENT_ID') GOOGLE_CLIENT_ID = v;
+                        else if (varName === 'GOOGLE_CLOUD_PROJECT_ID') GOOGLE_CLOUD_PROJECT_ID = v;
+                        else if (varName === 'CORS_PROXY_URL') CORS_PROXY_URL = v;
+                        else if (varName === 'TOSH_API_TOKEN') TOSH_API_TOKEN = v;
+                        else if (varName === 'GEMINI_API_KEY') GEMINI_API_KEY = v;
+                        try { localStorage.setItem(key, v); } catch(_) {}
+                        if (inputEl) inputEl.value = v;
+                        settingsApplied++;
+                    }
+                }
+
                 let added = 0, skipped = 0;
-                for (const item of parsed) {
+                for (const item of mappings) {
                     if (!item || typeof item !== 'object') { skipped++; continue; }
                     const last4 = (item.cardLastFour || item.card_last_four || '').toString().replace(/\D/g, '').slice(-4);
                     const tagName = (item.tagName || item.tag_name || '').toString().trim();
@@ -499,7 +547,17 @@
                 });
                 if (receiptsUpdated > 0) renderReviewQueue();
 
-                logActivity(`Imported ${added} mapping(s)${skipped ? `, skipped ${skipped} invalid` : ''}${receiptsUpdated ? `, applied to ${receiptsUpdated} pending receipt(s)` : ''}.`, 'success');
+                if (settingsApplied > 0) {
+                    updateUIState();
+                    if (TOSH_API_TOKEN && CORS_PROXY_URL) fetchToshlTags();
+                }
+
+                const parts = [];
+                parts.push(`${added} mapping(s)`);
+                if (skipped) parts.push(`${skipped} skipped`);
+                if (settingsApplied) parts.push(`${settingsApplied} setting(s)`);
+                if (receiptsUpdated) parts.push(`${receiptsUpdated} receipt(s) tagged`);
+                logActivity(`Imported: ${parts.join(', ')}.`, 'success');
             } catch (err) {
                 logActivity(`Import failed: ${err.message}`, 'error');
                 showModal('Import error', err.message);
