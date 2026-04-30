@@ -898,6 +898,9 @@
             const endDate = options.endDate || endDateInput.value;
             const preservePending = !!options.preservePending;
 
+            startDateInput.value = startDate;
+            endDateInput.value = endDate;
+
             scanGmailBtn.disabled = true;
             scanBtnText.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>Scanning...`;
             if (!preservePending) {
