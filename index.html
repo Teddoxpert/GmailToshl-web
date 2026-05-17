@@ -171,11 +171,12 @@
 
                 <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md">
                     <h2 class="text-xl font-bold mb-4">Statement Upload</h2>
-                    <p class="text-xs text-gray-400 dark:text-gray-500 mb-3">Upload bank or credit card statement PDFs to check against Toshl.</p>
+                    <p class="text-xs text-gray-400 dark:text-gray-500 mb-3">Upload up to 5 bank or credit card statement PDFs to check against Toshl.</p>
                     <div class="space-y-4">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">PDF Statements</label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">PDF Statements <span class="text-xs font-normal text-gray-400 dark:text-gray-500">(max 5)</span></label>
                             <input type="file" id="statement-file-input" accept=".pdf" multiple class="block w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 dark:file:bg-indigo-900 dark:file:text-indigo-200 hover:file:bg-indigo-100 dark:hover:file:bg-indigo-800">
+                            <div id="statement-file-list" class="hidden mt-2 text-xs text-gray-600 dark:text-gray-300 space-y-1"></div>
                         </div>
                         <div class="flex items-center">
                             <input type="checkbox" id="auto-scan-emails-checkbox" checked class="mr-2 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
@@ -186,7 +187,7 @@
                             <span id="analyze-btn-text">Analyze Statements</span>
                         </button>
                     </div>
-                    <p id="statement-helper-text" class="text-xs text-gray-400 dark:text-gray-500 mt-3 text-center">Select PDFs and connect Toshl + Gemini to enable.</p>
+                    <p id="statement-helper-text" class="text-xs text-gray-400 dark:text-gray-500 mt-3 text-center">Select up to 5 PDFs and connect Toshl + Gemini to enable.</p>
                 </div>
 
                 <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md">
@@ -235,6 +236,7 @@
         let CORS_PROXY_URL = '';
         const GMAIL_DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/gmail/v1/rest';
         const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/cloud-platform';
+        const MAX_STATEMENT_PDFS = 5;
 
         // --- STATE & INITIALIZATION ---
         let TOSH_API_TOKEN = '';
@@ -322,6 +324,7 @@
         const addCardMappingBtn = document.getElementById('add-card-mapping-btn');
 
         const statementFileInput = document.getElementById('statement-file-input');
+        const statementFileList = document.getElementById('statement-file-list');
         const analyzeStatementsBtn = document.getElementById('analyze-statements-btn');
         const autoScanEmailsCheckbox = document.getElementById('auto-scan-emails-checkbox');
         const analyzeBtnText = document.getElementById('analyze-btn-text');
@@ -736,6 +739,30 @@
             }
         }
 
+        function renderStatementFileList() {
+            const files = statementFileInput.files;
+            if (!files || files.length === 0) {
+                statementFileList.classList.add('hidden');
+                statementFileList.innerHTML = '';
+                return;
+            }
+            const items = Array.from(files).map(f =>
+                `<div class="flex items-center"><i class="fas fa-file-pdf text-indigo-500 mr-2"></i><span class="truncate">${escapeHtml(f.name)}</span></div>`
+            ).join('');
+            statementFileList.innerHTML = `<div class="font-medium text-gray-700 dark:text-gray-200">${files.length} of ${MAX_STATEMENT_PDFS} selected</div>${items}`;
+            statementFileList.classList.remove('hidden');
+        }
+
+        function handleStatementFileChange() {
+            const files = statementFileInput.files;
+            if (files && files.length > MAX_STATEMENT_PDFS) {
+                showModal('Too many files', `Please select up to ${MAX_STATEMENT_PDFS} PDF statements at once. You selected ${files.length}.`);
+                statementFileInput.value = '';
+            }
+            renderStatementFileList();
+            updateStatementBtnState();
+        }
+
         // --- AUTH & SETUP ---
         function gapiLoaded() {
             gapi.load('client', async () => {
@@ -885,7 +912,7 @@
 
         scanGmailBtn.addEventListener('click', scanGmail);
 
-        statementFileInput.addEventListener('change', updateStatementBtnState);
+        statementFileInput.addEventListener('change', handleStatementFileChange);
         analyzeStatementsBtn.addEventListener('click', () => {
             const hasFiles = statementFileInput.files && statementFileInput.files.length > 0;
             if (!hasFiles) {
@@ -1429,6 +1456,10 @@ Rules:
         async function processStatements() {
             const files = statementFileInput.files;
             if (!files || files.length === 0) return;
+            if (files.length > MAX_STATEMENT_PDFS) {
+                showModal('Too many files', `Please select up to ${MAX_STATEMENT_PDFS} PDF statements at once. You selected ${files.length}.`);
+                return;
+            }
 
             analyzeStatementsBtn.disabled = true;
             analyzeBtnText.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Analyzing...';
